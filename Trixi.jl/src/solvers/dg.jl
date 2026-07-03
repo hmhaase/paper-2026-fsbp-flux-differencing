@@ -1319,4 +1319,6 @@ include("dgsem_structured/dg.jl")
 include("dgsem_unstructured/dg.jl")
 include("dgsem_p4est/dg.jl")
 include("dgsem_t8code/dg.jl")
+
+include("fsbp/fsbp.jl")
 end # @muladd
