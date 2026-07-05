@@ -1337,4 +1337,6 @@ include("dgsem_p4est/dg.jl")
 include("dgsem_t8code/dg.jl")
 
 include("fsbp/fsbp.jl")
+
+include("fsbp_tree/fsbp.jl")
 end # @muladd
