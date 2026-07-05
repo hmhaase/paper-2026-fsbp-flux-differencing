@@ -439,7 +439,7 @@ function polynomial_derivative_matrix(nodes)
     return D
 end
 
-# Calculate and interpolation matrix (Vandermonde matrix) between two given sets of nodes
+# Calculate an interpolation matrix (Vandermonde matrix) between two given sets of nodes
 # See algorithm 32 "PolynomialInterpolationMatrix" from Kopriva's book.
 function polynomial_interpolation_matrix(nodes_in, nodes_out,
                                          baryweights_in = barycentric_weights(nodes_in))
