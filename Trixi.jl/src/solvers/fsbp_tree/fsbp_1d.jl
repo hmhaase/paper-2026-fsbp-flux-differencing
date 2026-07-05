@@ -38,7 +38,8 @@ function prolong2interfaces!(cache, u, mesh::TreeMesh{1}, equations, dg::DGFSBP)
     return nothing
 end
 
-function prolong2boundaries!(cache, u, mesh::TreeMesh{1}, equations, dg::DGFSBP)
+function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{1}, equations,
+                             dg::DGFSBP)
     @unpack boundaries = cache
     bases = cache.elements.bases
 
@@ -101,7 +102,8 @@ end
     end
 end
 
-function calc_surface_integral!(du, u, mesh::Union{TreeMesh{1}, StructuredMesh{1}},
+function calc_surface_integral!(backend::Nothing, du, u,
+                                mesh::Union{TreeMesh{1}, StructuredMesh{1}},
                                 equations, surface_integral, dg::DGFSBP, cache)
     # Note that all fluxes have been computed with outward-pointing normal vectors.
     # We also use explicit assignments instead of `+=` to let `@muladd` turn these
@@ -116,7 +118,7 @@ function calc_surface_integral!(du, u, mesh::Union{TreeMesh{1}, StructuredMesh{1
     return nothing
 end
 
-function apply_jacobian!(du, mesh::TreeMesh{1},
+function apply_jacobian!(backend::Nothing, du, mesh::TreeMesh{1},
                          equations, dg::DGFSBP, cache)
     ET = eltype(du)
     @threaded for element in eachelement(dg, cache)

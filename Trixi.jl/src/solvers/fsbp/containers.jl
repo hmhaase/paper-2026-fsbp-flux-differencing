@@ -23,6 +23,8 @@ end
 
 Base.eltype(::WrappedArray{NDIMS, T, A, WA}) where {NDIMS, T, A, WA} = T
 
+trixi_backend(::WrappedArray) = nothing
+
 @inline function convert_index(a::WrappedArray{NDIMS, T, A, WA},
                                (i_vars, i_dims...,
                                 element)) where {NDIMS, T,

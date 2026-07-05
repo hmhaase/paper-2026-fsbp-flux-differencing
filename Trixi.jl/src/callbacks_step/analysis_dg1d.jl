@@ -222,7 +222,7 @@ end
 
 function integrate(func::Func, u,
                    mesh::Union{TreeMesh{1}, StructuredMesh{1}},
-                   equations, dg::Union{DGSEM, FDSBP}, cache;
+                   equations, dg::Union{DGSEM, FDSBP, DGFSBP}, cache;
                    normalize = true) where {Func}
     integrate_via_indices(u, mesh, equations, dg, cache;
                           normalize = normalize) do u, i, element, equations, dg
@@ -233,7 +233,7 @@ end
 
 function analyze(::typeof(entropy_timederivative), du, u, t,
                  mesh::Union{TreeMesh{1}, StructuredMesh{1}}, equations,
-                 dg::Union{DGSEM, FDSBP}, cache)
+                 dg::Union{DGSEM, FDSBP, DGFSBP}, cache)
     # Calculate ∫(∂S/∂u ⋅ ∂u/∂t)dΩ
     integrate_via_indices(u, mesh, equations, dg, cache,
                           du) do u, i, element, equations, dg, du

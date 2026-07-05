@@ -43,4 +43,22 @@ CellBasisT <: CellBasis{RealT},
 CellBasisConstructorT <: CellBasisConstructor{CellBasisT}
 } = RealT
 
+struct PerCellAnalyzer{RealT <: Real} <:
+       SolutionAnalyzer{RealT}
+    analysis_polydeg::Any
+end
+
+"""
+    SolutionAnalyzer(basis::PerCellBasis; analysis_polydeg = nothing)
+
+SolutionAnalyzer for spatially varying bases.
+
+- analysis_polydeg == nothing => no interpolation, compares numerical solution to exact solution at basis nodes
+- analysis_polydeg == n::Int => projects exact and numerical solution to polynomial space with degree n and compares these projections
+"""
+function SolutionAnalyzer(basis::PerCellBasis; analysis_polydeg = nothing)
+    RealT = real(basis)
+    return PerCellAnalyzer{RealT}(analysis_polydeg)
+end
+
 include("calc_volume_integral.jl")

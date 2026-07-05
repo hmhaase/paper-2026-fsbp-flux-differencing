@@ -145,14 +145,14 @@ end
 
 # Create boundaries container and initialize boundary data in `elements`.
 function init_boundaries(cell_ids, mesh::TreeMesh1D,
-                         elements::TreeElementBasisContainer1D)
+                         elements::TreeElementBasisContainer1D, basis)
     # Initialize container
     n_boundaries = count_required_boundaries(mesh, cell_ids)
     boundaries = TreeBoundaryContainer1D{real(elements), eltype(elements)}(n_boundaries,
                                                                            nvariables(elements))
 
     # Connect elements with boundaries
-    init_boundaries!(boundaries, elements, mesh)
+    init_boundaries!(boundaries, elements, mesh, basis)
     return boundaries
 end
 
@@ -164,6 +164,14 @@ end
     else
         return SVector(boundary_coordinate(basis, Positive()))
     end
+end
+
+function calc_boundary_node_coordinates!(boundaries, element, count, direction,
+                                         elements::TreeElementBasisContainer1D,
+                                         mesh::TreeMesh1D, basis)
+    boundaries.node_coordinates[:, count] .= boundary_node_coordinate(elements, element,
+                                                                       direction)
+    return nothing
 end
 
 function wrap_array(u_ode::AbstractVector, mesh::AbstractMesh, equations,
