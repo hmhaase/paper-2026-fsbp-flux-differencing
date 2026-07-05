@@ -398,7 +398,9 @@ function prolong2interfaces!(cache, u_or_flux_parabolic,
 
         # interface in x-direction
         for v in eachvariable(equations)
-            interfaces_u[1, v, interface] = u_or_flux_parabolic[v, nnodes(dg),
+            interfaces_u[1, v, interface] = u_or_flux_parabolic[v,
+                                                                nnodes(dg, cache.elements,
+                                                                       left_element),
                                                                 left_element]
             interfaces_u[2, v, interface] = u_or_flux_parabolic[v, 1, right_element]
         end
@@ -532,7 +534,10 @@ function prolong2boundaries!(backend::Nothing, cache, u_or_flux_parabolic,
         if neighbor_sides[boundary] == 1
             # element in -x direction of boundary
             for v in eachvariable(equations)
-                boundaries.u[1, v, boundary] = u_or_flux_parabolic[v, nnodes(dg),
+                boundaries.u[1, v, boundary] = u_or_flux_parabolic[v,
+                                                                   nnodes(dg,
+                                                                          cache.elements,
+                                                                          element),
                                                                    element]
             end
         else # Element in +x direction of boundary
@@ -773,12 +778,10 @@ end
 
 function calc_sources!(backend::Nothing, du, u, t, source_terms,
                        equations::AbstractEquations{1}, dg::DG, cache)
-    @unpack node_coordinates = cache.elements
-
     @threaded for element in eachelement(dg, cache)
-        for i in eachnode(dg)
+        for i in eachnode(dg, cache.elements, element)
             u_local = get_node_vars(u, equations, dg, i, element)
-            x_local = get_node_coords(node_coordinates, equations, dg,
+            x_local = get_node_coords(cache.elements, equations, dg,
                                       i, element)
             du_local = source_terms(u_local, x_local, t, equations)
             add_to_node_vars!(du, du_local, equations, dg, i, element)

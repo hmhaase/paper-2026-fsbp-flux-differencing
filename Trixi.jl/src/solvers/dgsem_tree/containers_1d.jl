@@ -420,6 +420,17 @@ function calc_boundary_node_coordinates!(boundaries, element, count, direction,
     return nothing
 end
 
+@inline function boundary_node_coordinate(elements, element, direction)
+    enc = elements.node_coordinates
+    if direction == 1 # -x direction
+        return enc[:, 1, element]
+    elseif direction == 2 # +x direction
+        return enc[:, end, element]
+    else
+        error("should not happen")
+    end
+end
+
 # Initialize connectivity between elements and boundaries
 function init_boundaries!(boundaries, elements, mesh::TreeMesh1D, basis)
     # Reset boundaries count

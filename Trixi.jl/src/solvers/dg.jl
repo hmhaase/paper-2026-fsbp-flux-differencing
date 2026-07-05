@@ -962,6 +962,16 @@ In particular, not the nodes themselves are returned.
 @inline eachnode(dg::DG) = Base.OneTo(nnodes(dg))
 @inline nnodes(dg::DG) = nnodes(dg.basis)
 
+"""
+    eachnode(dg::DG, elements, element)
+
+Return an iterator over the indices that specify the location in relevant data structures
+for the nodes in `dg` for a specific element of elements.
+In particular, not the nodes themselves are returned.
+"""
+@inline eachnode(dg::DG, elements, element) = Base.OneTo(nnodes(dg))
+@inline nnodes(dg::DG, elements, element) = nnodes(dg.basis)
+
 # This is used in some more general analysis code and needs to dispatch on the
 # `mesh` for some combinations of mesh/solver.
 @inline nelements(mesh, dg::DG, cache) = nelements(dg, cache)
@@ -1039,7 +1049,7 @@ end
 # - https://github.com/trixi-framework/Trixi.jl/issues/88
 # - https://github.com/trixi-framework/Trixi.jl/issues/87
 # - https://github.com/trixi-framework/Trixi.jl/issues/86
-@inline function get_node_coords(x, equations, solver::DG, indices...)
+@inline function get_node_coords(x::AbstractArray, equations, solver::DG, indices...)
     return SVector(ntuple(@inline(idx->x[idx, indices...]), Val(ndims(equations))))
 end
 
@@ -1122,6 +1132,12 @@ AdaptorAMR(mesh, dg::DG) = AdaptorL2(dg.basis)
 # General structs for discretizations based on the basic principle of
 # DGSEM (discontinuous Galerkin spectral element method)
 include("dgsem/dgsem.jl")
+
+@inline function get_node_coords(elements::AbstractElementContainer, equations,
+                                 solver::DG, indices...)
+    SVector(ntuple(@inline(idx->elements.node_coordinates[idx, indices...]),
+                   Val(ndims(equations))))
+end
 
 # Finite difference methods using summation by parts (SBP) operators
 # These methods are very similar to DG methods since they also impose interface
@@ -1238,8 +1254,8 @@ end
 function compute_coefficients!(backend::Nothing, u, func, t, mesh::AbstractMesh{1},
                                equations, dg::DG, cache)
     @threaded for element in eachelement(dg, cache)
-        for i in eachnode(dg)
-            x_node = get_node_coords(cache.elements.node_coordinates, equations, dg, i,
+        for i in eachnode(dg, cache.elements, element)
+            x_node = get_node_coords(cache.elements, equations, dg, i,
                                      element)
             # Changing the node positions passed to the initial condition by the minimum
             # amount possible with the current type of floating point numbers allows setting
@@ -1247,7 +1263,7 @@ function compute_coefficients!(backend::Nothing, u, func, t, mesh::AbstractMesh{
             # works if the jump location `x_jump` is at the position of an interface.
             if i == 1
                 x_node = SVector(nextfloat(x_node[1]))
-            elseif i == nnodes(dg)
+            elseif i == nnodes(dg, cache.elements, element)
                 x_node = SVector(prevfloat(x_node[1]))
             end
             u_node = func(x_node, t, equations)
