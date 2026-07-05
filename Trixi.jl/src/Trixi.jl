@@ -323,7 +323,8 @@ export DG,
        SurfaceIntegralWeakForm, SurfaceIntegralStrongForm,
        SurfaceIntegralUpwind,
        MortarL2,
-       Negative, Positive
+       Negative, Positive,
+       CellBasisConstructor, LobattoLegendreCellBasisConstructor
 
 export reconstruction_O2_inner, reconstruction_O2_full,
        reconstruction_constant,
