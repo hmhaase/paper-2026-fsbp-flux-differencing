@@ -42,3 +42,5 @@ RealT,
 CellBasisT <: CellBasis{RealT},
 CellBasisConstructorT <: CellBasisConstructor{CellBasisT}
 } = RealT
+
+include("calc_volume_integral.jl")

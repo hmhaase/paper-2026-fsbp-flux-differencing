@@ -6,4 +6,5 @@
 #! format: noindent
 
 include("containers.jl")
+include("fsbp_1d.jl")
 end # @muladd
