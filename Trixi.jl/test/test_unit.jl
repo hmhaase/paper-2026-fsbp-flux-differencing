@@ -3884,6 +3884,56 @@ end
     end
 end
 
+@testitem "Unit: LobattoLikeCellBasis / LobattoLegendreCellBasis match LobattoLegendreBasis" setup=[Setup, UnitTests] tags=[:misc_part1] begin
+    RealT = Float64
+
+    for polydeg in 1:5
+        # Ground truth: Trixi's existing, independently implemented DGSEM
+        # Lobatto-Legendre basis on the reference domain [-1, 1].
+        dg_basis = LobattoLegendreBasis(RealT, polydeg)
+
+        # LobattoLegendreCellBasis on the reference domain (pos = 0, dx = 2, i.e. J = 1)
+        # should reduce exactly to `dg_basis`.
+        basis_ll = Trixi.LobattoLegendreCellBasis(polydeg, zero(RealT), RealT(2))
+
+        # LobattoLikeCellBasis built directly from the reference basis' raw data
+        basis_like = Trixi.LobattoLikeCellBasis(dg_basis.nodes, dg_basis.weights,
+                                                dg_basis.derivative_matrix,
+                                                nodes_out -> Trixi.polynomial_interpolation_matrix(dg_basis.nodes,
+                                                                                                    nodes_out))
+
+        # DGSEM no longer stores a boundary-interpolation matrix for the Lobatto
+        # basis (boundary evaluation collapses to a node lookup there); reconstruct
+        # the same M^{-1}*L quantity via the still-available generic helpers.
+        dg_basis_boundary_lift = hcat(Trixi.calc_Lhat(Trixi.calc_L(-one(RealT),
+                                                                    dg_basis.nodes,
+                                                                    dg_basis.weights),
+                                                       dg_basis.weights),
+                                      Trixi.calc_Lhat(Trixi.calc_L(one(RealT),
+                                                                   dg_basis.nodes,
+                                                                   dg_basis.weights),
+                                                      dg_basis.weights))
+
+        @testset "polydeg=$polydeg" begin
+            for basis in (basis_ll, basis_like)
+                @test Trixi.get_nodes(basis) ≈ dg_basis.nodes
+                @test Trixi.quadrature_weights(basis) ≈ dg_basis.weights
+                @test basis.derivative_split ≈ dg_basis.derivative_split
+                @test basis.derivative_dhat ≈ dg_basis.derivative_hat
+                @test basis.boundary_lift ≈ dg_basis_boundary_lift
+            end
+
+            # Affine map to a general physical cell: nodes/weights must scale accordingly.
+            pos = 0.25
+            dx = 0.5
+            J = dx / 2
+            basis_phys = Trixi.LobattoLegendreCellBasis(polydeg, pos, dx)
+            @test Trixi.get_nodes(basis_phys) ≈ J .* dg_basis.nodes .+ pos
+            @test Trixi.quadrature_weights(basis_phys) ≈ abs(J) .* dg_basis.weights
+        end
+    end
+end
+
 @testitem "Unit: WrappedArray ragged indexing (isotropic)" setup=[Setup, UnitTests] tags=[:misc_part1] begin
     for nvars in (1, 3)
     for NDIMS in 1:3
