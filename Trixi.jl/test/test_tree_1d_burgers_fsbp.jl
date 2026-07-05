@@ -52,6 +52,70 @@ end
     @test norm(u_lobatto_like - u_dgsem, Inf) < 1e-12
 end
 
+@testitem "TreeMesh1D Burgers FSBP: GeneralSBPCellBasis (weak form) vs DGSEM" setup=[
+    Setup,
+    TreeMesh1DBurgersFSBP
+] tags=[:tree_part1] begin
+    using LinearAlgebra: norm
+
+    # Both runs use the same FSBP elixir; only the solver differs.
+    # DGSEM with polydeg=3 and VolumeIntegralWeakForm is the reference.
+    trixi_include(@__MODULE__,
+                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
+                  tspan = (0.0, 0.5), analysis_polydeg = 6,
+                  solver = DGSEM(polydeg = 3, surface_flux = flux_lax_friedrichs))
+    u_dgsem = copy(sol.u[end])
+
+    polydeg = 3
+    nodes_ref, weights_ref = Trixi.gauss_lobatto_nodes_weights(polydeg + 1)
+    D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
+    calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
+    general_ctor = ReferenceCellBasisConstructor{Float64, Trixi.GeneralSBPCellBasis{Float64}}(
+        D_ref, nodes_ref, weights_ref, calc_interp, (-1.0, 1.0))
+    solver_general = DGFSBP(general_ctor;
+                             surface_flux = flux_lax_friedrichs,
+                             volume_integral = VolumeIntegralWeakForm())
+
+    trixi_include(@__MODULE__,
+                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
+                  tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_general)
+    u_general_sbp = copy(sol.u[end])
+
+    solver_lobatto_like = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> polydeg);
+                                  surface_flux = flux_lax_friedrichs,
+                                  volume_integral = VolumeIntegralWeakForm())
+    trixi_include(@__MODULE__,
+                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
+                  tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_lobatto_like)
+    u_lobatto_like = copy(sol.u[end])
+
+    @test norm(u_general_sbp - u_dgsem, Inf) < 1e-12
+    @test norm(u_lobatto_like - u_dgsem, Inf) < 1e-12
+end
+
+@testitem "TreeMesh1D Burgers FSBP: GeneralSBPCellBasis with interior-only nodes" setup=[
+    Setup,
+    TreeMesh1DBurgersFSBP
+] tags=[:tree_part1] begin
+    polydeg = 3
+    nodes_ref, weights_ref = Trixi.gauss_nodes_weights(polydeg + 1)
+    D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
+    calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
+    general_ctor = ReferenceCellBasisConstructor{Float64, Trixi.GeneralSBPCellBasis{Float64}}(
+        D_ref, nodes_ref, weights_ref, calc_interp, (-1.0, 1.0))
+    solver_general = DGFSBP(general_ctor;
+                             surface_flux = flux_lax_friedrichs,
+                             volume_integral = VolumeIntegralWeakForm())
+
+    trixi_include(@__MODULE__,
+                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
+                  tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_general)
+    l2, linf = analysis_callback(sol)
+
+    @test l2 ≈ [5.0339303969769965e-6]
+    @test linf ≈ [2.7951089267563844e-5]
+end
+
 @testitem "TreeMesh1D Burgers FSBP: elixir_burgers_basic.jl: error norms match DGSEM (analysis_polydeg=6)" setup=[
     Setup,
     TreeMesh1DBurgersFSBP

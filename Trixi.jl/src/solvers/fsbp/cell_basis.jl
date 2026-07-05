@@ -139,3 +139,77 @@ function LobattoLegendreCellBasis(polydeg::Int, pos::RealT, dx::RealT) where {Re
                                 derivative_dhat,
                                 calc_interp)
 end
+
+"""
+    GeneralSBPCellBasis <: CellBasis
+
+Basis for general SBP operators where nodes need not include element boundaries.
+The boundary interpolation/extrapolation operator R is stored as `boundary_interpolation`
+(shape `(2, nnodes)`, row 1 = left/−x, row 2 = right/+x) and maps node values to boundary
+values.  `boundary_lift = M⁻¹Rᵀ` (shape `(nnodes, 2)`) is pre-computed for the surface
+integral hot path.
+
+Unlike `LobattoLikeCellBasis`, this type stores an explicit `boundary_interpolation` field
+and a `boundary_nodes` field for the physical element boundary coordinates.
+`LobattoLikeCellBasis` has neither of these.
+"""
+struct GeneralSBPCellBasis{RealT <: Real} <: CellBasis{RealT}
+    _nodes::Vector{RealT}
+    _weights::Vector{RealT}
+    "M⁻¹Rᵀ, size (nnodes, 2); same field name and layout as LobattoLikeCellBasis.boundary_lift"
+    boundary_lift::Matrix{RealT}
+    "Boundary evaluation operator R, size (2, nnodes); row 1 = left (−x), row 2 = right (+x)"
+    boundary_interpolation::Matrix{RealT}
+    "Physical coordinates [x_left, x_right] of the element boundaries"
+    boundary_nodes::SVector{2, RealT}
+    derivative_split::Matrix{RealT}
+    derivative_dhat::Matrix{RealT}
+    calc_interpolation_matrix::Any
+end
+
+get_nodes(basis::GeneralSBPCellBasis) = basis._nodes
+eachnode(basis::GeneralSBPCellBasis) = Base.OneTo(nnodes(basis))
+nnodes(basis::GeneralSBPCellBasis) = length(basis._nodes)
+quadrature_weights(basis::GeneralSBPCellBasis) = basis._weights
+
+function interpolation_matrix(basis::GeneralSBPCellBasis, nodes_out)
+    basis.calc_interpolation_matrix(nodes_out)
+end
+
+@inline Base.real(::GeneralSBPCellBasis{RealT}) where {RealT <: Real} = RealT
+
+@inline boundary_coordinate(basis::GeneralSBPCellBasis, ::Negative) = basis.boundary_nodes[1]
+@inline boundary_coordinate(basis::GeneralSBPCellBasis, ::Positive) = basis.boundary_nodes[2]
+
+function GeneralSBPCellBasis(nodes, boundary_nodes, weights, D, calc_interpolation_matrix)
+    RealT = eltype(nodes)
+    n = length(nodes)
+    @assert size(D) == (n, n)
+
+    # Derive R by evaluating the interpolation operator at the physical boundary points
+    boundary_interpolation = calc_interpolation_matrix(boundary_nodes)
+    @assert size(boundary_interpolation) == (2, n)
+
+    # boundary_lift = M⁻¹Rᵀ:  lift[i,j] = R[j,i] / w[i]
+    boundary_lift = Matrix{RealT}(undef, n, 2)
+    for j in 1:2, i in 1:n
+        boundary_lift[i, j] = boundary_interpolation[j, i] / weights[i]
+    end
+
+    # derivative_split = 2D − M⁻¹B,  B = Rᵀ diag(−1, 1) R
+    # [-1,1] .* boundary_interpolation scales row 1 by -1 and row 2 by +1 (diag(-1,1)*R)
+    # then (n×2)*(2×n) gives B = RᵀDB
+    B = boundary_interpolation' * ([-one(RealT), one(RealT)] .* boundary_interpolation)
+    derivative_split = 2 * D - (1 ./ weights) .* B
+
+    # derivative_dhat = −Dᵀ .* wᵀ ./ w  (weak form matrix)
+    derivative_dhat = -D' .* weights' ./ weights
+
+    GeneralSBPCellBasis{RealT}(Vector{RealT}(nodes), Vector{RealT}(weights),
+                               Matrix{RealT}(boundary_lift),
+                               Matrix{RealT}(boundary_interpolation),
+                               SVector{2, RealT}(boundary_nodes),
+                               Matrix{RealT}(derivative_split),
+                               Matrix{RealT}(derivative_dhat),
+                               calc_interpolation_matrix)
+end

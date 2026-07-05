@@ -22,6 +22,15 @@ end
     dest .= @view u[element][:, end]
 end
 
+@inline function extract_boundary_value!(dest, u, element,
+                                         basis::GeneralSBPCellBasis, ::Negative)
+    mul!(dest, u[element], @view basis.boundary_interpolation[1, :])
+end
+@inline function extract_boundary_value!(dest, u, element,
+                                         basis::GeneralSBPCellBasis, ::Positive)
+    mul!(dest, u[element], @view basis.boundary_interpolation[2, :])
+end
+
 function prolong2interfaces!(cache, u, mesh::TreeMesh{1}, equations, dg::DGFSBP)
     @unpack interfaces = cache
     bases = cache.elements.bases
@@ -118,6 +127,20 @@ end
                             surface_flux_values[v, 1, element] * factor_neg
         du[v, n, element] = du[v, n, element] +
                             surface_flux_values[v, 2, element] * factor_pos
+    end
+end
+
+@inline function apply_surface_lift!(du, surface_flux_values, element,
+                                     basis::GeneralSBPCellBasis, equations)
+    boundary_lift = basis.boundary_lift
+    for i in eachnode(basis)
+        factor_neg = boundary_lift[i, 1]
+        factor_pos = boundary_lift[i, 2]
+        for v in eachvariable(equations)
+            du[v, i, element] = (du[v, i, element] -
+                                 surface_flux_values[v, 1, element] * factor_neg +
+                                 surface_flux_values[v, 2, element] * factor_pos)
+        end
     end
 end
 

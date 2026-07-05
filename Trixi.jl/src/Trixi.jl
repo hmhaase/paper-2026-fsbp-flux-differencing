@@ -325,6 +325,7 @@ export DG,
        MortarL2,
        Negative, Positive,
        CellBasisConstructor, LobattoLegendreCellBasisConstructor,
+       ReferenceCellBasisConstructor,
        DGFSBP
 
 export reconstruction_O2_inner, reconstruction_O2_full,
