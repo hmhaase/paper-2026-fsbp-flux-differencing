@@ -324,7 +324,8 @@ export DG,
        SurfaceIntegralUpwind,
        MortarL2,
        Negative, Positive,
-       CellBasisConstructor, LobattoLegendreCellBasisConstructor
+       CellBasisConstructor, LobattoLegendreCellBasisConstructor,
+       DGFSBP
 
 export reconstruction_O2_inner, reconstruction_O2_full,
        reconstruction_constant,
