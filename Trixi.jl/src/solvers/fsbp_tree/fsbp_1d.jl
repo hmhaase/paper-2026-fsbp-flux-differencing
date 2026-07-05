@@ -59,6 +59,25 @@ function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{1}, equa
     return nothing
 end
 
+@inline function weak_form_kernel!(du, u,
+                                   element, mesh::Union{TreeMesh{1}, StructuredMesh{1}},
+                                   have_nonconservative_terms::False, equations,
+                                   dg::DGFSBP, cache, alpha = true)
+    derivative_dhat = cache.elements.bases[element].derivative_dhat
+
+    for i in eachnode(dg, cache.elements, element)
+        u_node = get_node_vars(u, equations, dg, i, element)
+
+        flux1 = flux(u_node, 1, equations)
+        for ii in eachnode(dg, cache.elements, element)
+            multiply_add_to_node_vars!(du, alpha * derivative_dhat[ii, i], flux1,
+                                       equations, dg, ii, element)
+        end
+    end
+
+    return nothing
+end
+
 @inline function flux_differencing_kernel!(du, u,
                                            element,
                                            mesh::Union{TreeMesh{1}, StructuredMesh{1}},

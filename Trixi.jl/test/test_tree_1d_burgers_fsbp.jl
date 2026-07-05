@@ -28,6 +28,30 @@ end
     @test norm(u_fsbp - u_dgsem, Inf) < 1e-12
 end
 
+@testitem "TreeMesh1D Burgers FSBP: DGFSBP weak form vs DGSEM" setup=[
+    Setup,
+    TreeMesh1DBurgersFSBP
+] tags=[:tree_part1] begin
+    using LinearAlgebra: norm
+
+    trixi_include(@__MODULE__,
+                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
+                  tspan = (0.0, 0.5), analysis_polydeg = 6,
+                  solver = DGSEM(polydeg = 3, surface_flux = flux_lax_friedrichs))
+    u_dgsem = copy(sol.u[end])
+
+    polydeg = 3
+    solver_lobatto_like = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> polydeg);
+                                  surface_flux = flux_lax_friedrichs,
+                                  volume_integral = VolumeIntegralWeakForm())
+    trixi_include(@__MODULE__,
+                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
+                  tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_lobatto_like)
+    u_lobatto_like = copy(sol.u[end])
+
+    @test norm(u_lobatto_like - u_dgsem, Inf) < 1e-12
+end
+
 @testitem "TreeMesh1D Burgers FSBP: elixir_burgers_basic.jl: error norms match DGSEM (analysis_polydeg=6)" setup=[
     Setup,
     TreeMesh1DBurgersFSBP
