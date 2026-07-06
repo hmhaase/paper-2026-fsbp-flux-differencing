@@ -889,7 +889,7 @@ function PlotData1D(cb::DiscreteCallback{<:Any, <:TimeSeriesCallback},
     return PlotData1D(cb.affect!, point_id)
 end
 
-function PlotData1D(u_ode,
+function PlotData1D(u_ode::AbstractVector,
                     semi::SemidiscretizationHyperbolic{Mesh, Equations,
                                                        InitialCondition,
                                                        BoundaryConditions,
@@ -924,5 +924,38 @@ function PlotData1D(u::WrappedArray, mesh::TreeMesh, equations, solver::DGFSBP, 
 
     return PlotData1D(x, data, variable_names_, mesh_vertices_x,
                       orientation_x)
+end
+
+# Plot `func(x, equations)` over a `DGFSBP` mesh by evaluating it at every (ragged) per-cell
+# node into a `WrappedArray`, then reusing the solution-data `PlotData1D(u::WrappedArray, ...)`.
+function PlotData1D(func::Function, mesh::TreeMesh, equations, solver::DGFSBP, cache;
+                    kwargs...)
+    elements = cache.elements
+
+    # `func`'s output length sets the component count; it need not equal `nvariables(equations)`.
+    node_vars_1 = func(get_node_coords(elements, 1, 1), equations)
+    n_vars = length(node_vars_1)
+
+    # Recompute offsets: the cache's assume `nvariables(equations)` components, not `n_vars`.
+    num_nodes_in_element = elements.num_nodes_in_element
+    offsets = Vector{Int}(undef, nelements(elements) + 1)
+    offsets[1] = 0
+    for e in eachelement(elements)
+        offsets[e + 1] = offsets[e] + n_vars * nnodes(elements, e)
+    end
+
+    a = Vector{eltype(node_vars_1)}(undef, offsets[end])
+    u = WrappedArray(Val(1), n_vars, num_nodes_in_element, offsets, a)
+
+    for e in eachelement(elements)
+        for i in 1:nnodes(elements, e)
+            node_vars = func(get_node_coords(elements, i, e), equations)
+            for v in 1:n_vars
+                u[v, i, e] = node_vars[v]
+            end
+        end
+    end
+
+    return PlotData1D(u, mesh, equations, solver, cache; kwargs...)
 end
 end # @muladd
