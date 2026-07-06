@@ -483,6 +483,80 @@ function get_data_1d(original_nodes, unstructured_data, nvisnodes, reinterpolate
            vcat(original_nodes[1, 1, :], original_nodes[1, end, end])
 end
 
+function get_data_1d(u::WrappedArray, tree, elements, nvisnodes, reinterpolate,
+                     solution_variables, equations)
+    RealT = eltype(get_node_coords(elements, 1, 1))
+    n_elements = nelements(elements)
+    n_vars_in = size(u[1], 1)
+    mesh_vertices_x = Vector{RealT}(undef, n_elements + 1)
+    for (i, e) in enumerate(eachelement(elements))
+        cell_id = elements.cell_ids[e]
+        dx2 = length_at_cell(tree, cell_id) / 2
+        p = cell_coordinates(tree, cell_id)[1]
+        mesh_vertices_x[i + 1] = p + dx2
+        if i == 1
+            mesh_vertices_x[1] = p - dx2
+        end
+    end
+
+    if reinterpolate
+        n_total_nodes = num_total_nodes(elements)
+
+        nvisnodes_for_element = if isnothing(nvisnodes)
+            n_total_nodes *= 2
+            n -> 2 * n          # 2× oversampling, scales with element degree
+        elseif nvisnodes == 0
+            # we add an extra node to fvm elements for visualization
+            n_total_nodes += count(==(1), (nnodes(b) for b in elements.bases))
+            n -> max(n, 2)              # same count, maps GL nodes → equidistant
+        else
+            @assert nvisnodes>=2 "nvisnodes must be zero or >= 2"
+            n_total_nodes = nelements(elements) * nvisnodes
+            _ -> nvisnodes      # fixed global count, same for all elements
+        end
+
+        nodes = Vector{RealT}(undef, n_total_nodes)
+        # Apply solution_variables to determine output column count
+        u_sample = SVector{ n_vars_in}(ntuple(j -> u[j, 1, 1], n_vars_in))
+        n_vars_out = length(solution_variables(u_sample, equations))
+        data = Array{eltype(elements), 2}(undef, n_total_nodes, n_vars_out)
+
+        n = 1
+        for (e, x0, x1) in zip(eachelement(elements), mesh_vertices_x,
+                               mesh_vertices_x[2:end])
+            nvis = nvisnodes_for_element(nnodes(elements, e))
+            nvis_nodes = range(x0, x1, length = nvis)
+            nodes[n:(n + nvis - 1)] .= nvis_nodes
+
+            basis = elements.bases[e]
+            V = interpolation_matrix(basis, nvis_nodes)
+            u_interp = V * u[e]'
+            for i in 1:nvis
+                u_node = SVector{n_vars_in}(ntuple(j -> u_interp[i, j], n_vars_in))
+                data[n + i - 1, :] .= solution_variables(u_node, equations)
+            end
+            n += nvis
+        end
+        nodes, data, mesh_vertices_x
+    else
+        n_total_nodes = num_total_nodes(elements)
+        u_sample = SVector{ n_vars_in}(ntuple(j -> u[j, 1, 1], n_vars_in))
+        n_vars_out = length(solution_variables(u_sample, equations))
+        nodes = Vector{RealT}(undef, n_total_nodes)
+        data = Array{eltype(elements), 2}(undef, n_total_nodes, n_vars_out)
+        n = 1
+        for e in eachelement(elements)
+            for i in 1:nnodes(elements, e)
+                nodes[n] = get_node_coords(elements, i, e)[1]
+                u_node = SVector{n_vars_in}(ntuple(j -> u[j, i, e], n_vars_in))
+                data[n, :] .= solution_variables(u_node, equations)
+                n += 1
+            end
+        end
+        nodes, data, mesh_vertices_x
+    end
+end
+
 # Change order of dimensions (variables are now last) and convert data to `solution_variables`
 #
 # Note: This is a low-level function that is not considered as part of Trixi.jl's interface and may

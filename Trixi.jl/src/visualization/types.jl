@@ -888,4 +888,41 @@ function PlotData1D(cb::DiscreteCallback{<:Any, <:TimeSeriesCallback},
                     point_id::Integer)
     return PlotData1D(cb.affect!, point_id)
 end
+
+function PlotData1D(u_ode,
+                    semi::SemidiscretizationHyperbolic{Mesh, Equations,
+                                                       InitialCondition,
+                                                       BoundaryConditions,
+                                                       SourceTerms, Solver, Cache};
+                    kwargs...) where {Solver <: DGFSBP, Mesh, Equations,
+                                      InitialCondition, BoundaryConditions, SourceTerms,
+                                      Cache}
+    PlotData1D(wrap_array(u_ode, semi),
+               mesh_equations_solver_cache(semi)...;
+               kwargs...)
+end
+
+function PlotData1D(u::WrappedArray, mesh::TreeMesh, equations, solver::DGFSBP, cache;
+                    solution_variables = nothing, nvisnodes = nothing,
+                    reinterpolate = default_reinterpolate(solver),
+                    slice = :x, point = (0.0, 0.0, 0.0), curve = nothing,
+                    variable_names = nothing)
+    solution_variables_ = digest_solution_variables(equations, solution_variables)
+    variable_names_ = digest_variable_names(solution_variables_, equations,
+                                            variable_names)
+
+    orientation_x = 0 # Set 'orientation' to zero on default.
+
+    if ndims(mesh) == 1
+        x, data, mesh_vertices_x = get_data_1d(u, mesh.tree, cache.elements, nvisnodes,
+                                               reinterpolate, solution_variables_, equations)
+        orientation_x = 1
+
+    else
+        error("Not implemented")
+    end
+
+    return PlotData1D(x, data, variable_names_, mesh_vertices_x,
+                      orientation_x)
+end
 end # @muladd
