@@ -24,3 +24,26 @@ end
     # (e.g., from type instabilities)
     # @test_allocations(Trixi.rhs!, semi, sol, 1000)
 end
+
+@testitem "TreeMesh1D Euler FSBP: elixir_euler_ec_variable_polynomial_degree.jl" setup=[
+    Setup,
+    TreeMesh1DEulerFSBP
+] tags=[:tree_part1] begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_ec_variable_polynomial_degree.jl"),
+        analysis_polydeg = 6,
+        l2 = [
+            0.11275325749312189,
+            0.15918993256736444,
+            0.4201116027038316,
+        ],
+        linf = [
+            0.22193426272973626,
+            0.36131357156817606,
+            0.8446163262347817
+        ])
+
+    # TODO: Fix allocations
+    # Ensure that we do not have excessive memory allocations
+    # (e.g., from type instabilities)
+    # @test_allocations(Trixi.rhs!, semi, sol, 1000)
+end
