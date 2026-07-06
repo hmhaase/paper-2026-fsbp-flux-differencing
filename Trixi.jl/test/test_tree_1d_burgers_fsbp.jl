@@ -116,6 +116,23 @@ end
     @test linf ≈ [2.7951089267563844e-5]
 end
 
+@testitem "TreeMesh1D Burgers FSBP: elixir_burgers_mixed_basis.jl" setup=[
+    Setup,
+    TreeMesh1DBurgersFSBP
+] tags=[:tree_part1] begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
+                                 "elixir_burgers_mixed_basis.jl"),
+        l2 = [2.30231081502973e-5],
+        linf = [0.00012822591919103843])
+
+    # Verify the mesh actually mixed both basis families, not just one.
+    elements = semi.cache.elements
+    n_lobatto = count(b -> b isa Trixi.LobattoLikeCellBasis, elements.bases)
+    n_general = count(b -> b isa Trixi.GeneralSBPCellBasis, elements.bases)
+    @test n_lobatto == 8
+    @test n_general == 8
+end
+
 @testitem "TreeMesh1D Burgers FSBP: elixir_burgers_basic.jl: error norms match DGSEM (analysis_polydeg=6)" setup=[
     Setup,
     TreeMesh1DBurgersFSBP

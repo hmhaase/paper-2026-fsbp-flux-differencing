@@ -95,3 +95,34 @@ function init_local_basis!(constructor::ReferenceCellBasisConstructor{RealT, Cel
     nodes, weights, D_phys, interp = _map_to_physical(constructor, pos, dx)
     basis_ref[] = _build_cell_basis(CellBasisT, nodes, weights, D_phys, interp, pos, dx)
 end
+
+struct MixedCellBasisConstructor{RealT, CellBasisT <: CellBasis{RealT},
+                                 Constructors <: NamedTuple} <:
+       CellBasisConstructor{CellBasisT}
+    constructors::Constructors
+    selector::Function
+
+    function MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(
+            constructors::Constructors, selector::Function) where {
+                RealT <: Real, CellBasisT <: CellBasis{RealT},
+                Constructors <: NamedTuple}
+        for name in keys(constructors)
+            ctor = getfield(constructors, name)
+            @assert ctor isa CellBasisConstructor{<:CellBasis{RealT}} ||
+                error("Constructor '$name' is $(typeof(ctor)), expected CellBasisConstructor{<:CellBasis{$RealT}}")
+        end
+        new{RealT, CellBasisT, Constructors}(constructors, selector)
+    end
+end
+
+function MixedCellBasisConstructor(constructors::Constructors, selector::Function) where {
+        Constructors <: NamedTuple}
+    CellBasisT = Union{map(ctor -> cell_basis_type(typeof(ctor)), Tuple(constructors))...}
+    RealT = real(first(constructors))
+    MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(constructors, selector)
+end
+
+function init_local_basis!(c::MixedCellBasisConstructor, basis_ref, pos, dx)
+    chosen = c.selector(c.constructors, pos, dx)
+    init_local_basis!(chosen, basis_ref, pos, dx)
+end

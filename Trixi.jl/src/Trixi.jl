@@ -326,6 +326,7 @@ export DG,
        Negative, Positive,
        CellBasisConstructor, LobattoLegendreCellBasisConstructor,
        ReferenceCellBasisConstructor,
+       MixedCellBasisConstructor,
        DGFSBP
 
 export reconstruction_O2_inner, reconstruction_O2_full,
