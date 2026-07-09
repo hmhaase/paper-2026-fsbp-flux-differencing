@@ -133,6 +133,17 @@ end
     @test n_general == 8
 end
 
+@testitem "TreeMesh1D Burgers FSBP: elixir_burgers_basic.jl with periodicity=false" setup=[
+    Setup,
+    TreeMesh1DBurgersFSBP
+] tags=[:tree_part1] begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
+        periodicity = false,
+        boundary_conditions = BoundaryConditionDirichlet(initial_condition_convergence_test),
+        l2 = [3.671547447293672e-5],
+        linf = [0.0001619006414712576])
+end
+
 @testitem "TreeMesh1D Burgers FSBP: elixir_burgers_basic.jl: error norms match DGSEM (analysis_polydeg=6)" setup=[
     Setup,
     TreeMesh1DBurgersFSBP
