@@ -5,10 +5,10 @@
 @muladd begin
 #! format: noindent
 
-# `reset_du!` override: the generic version calls `du[.., element]` which
-# allocates an unsafe_wrap'd view per element. Directly zeroing the flat
-# backing vector avoids all allocations.
-function reset_du!(du::WrappedArray, dg::DGFSBP, cache)
+# The generic `set_zero!` calls `du[.., element]`, which allocates an unsafe_wrap'd
+# view per element. Directly zeroing the flat backing vector avoids all allocations.
+# `trixi_backend(::WrappedArray)` is always `nothing`, so this covers every case.
+function set_zero!(::Nothing, du::WrappedArray, dg::DGFSBP, cache)
     fill!(du.a, zero(eltype(du)))
     return nothing
 end
