@@ -72,15 +72,18 @@ end
                                    element, mesh::Union{TreeMesh{1}, StructuredMesh{1}},
                                    have_nonconservative_terms::False, equations,
                                    dg::DGFSBP, cache, alpha = true)
-    derivative_dhat = cache.elements.bases[element].derivative_dhat
+    basis = cache.elements.bases[element]
+    derivative_dhat = basis.derivative_dhat
+    u_element = u[element]
+    du_element = du[element]
 
-    for i in eachnode(dg, cache.elements, element)
-        u_node = get_node_vars(u, equations, dg, i, element)
+    for i in eachnode(basis)
+        u_node = get_node_vars(u_element, equations, dg, i)
 
         flux1 = flux(u_node, 1, equations)
-        for ii in eachnode(dg, cache.elements, element)
-            multiply_add_to_node_vars!(du, alpha * derivative_dhat[ii, i], flux1,
-                                       equations, dg, ii, element)
+        for ii in eachnode(basis)
+            multiply_add_to_node_vars!(du_element, alpha * derivative_dhat[ii, i], flux1,
+                                       equations, dg, ii)
         end
     end
 
@@ -92,11 +95,14 @@ end
                                            mesh::Union{TreeMesh{1}, StructuredMesh{1}},
                                            have_nonconservative_terms::False, equations,
                                            volume_flux, dg::DGFSBP, cache, alpha = true)
-    derivative_split = cache.elements.bases[element].derivative_split
+    basis = cache.elements.bases[element]
+    derivative_split = basis.derivative_split
+    u_element = u[element]
+    du_element = du[element]
 
     # Calculate volume integral in one element
-    for i in eachnode(dg, cache.elements, element)
-        u_node = get_node_vars(u, equations, dg, i, element)
+    for i in eachnode(basis)
+        u_node = get_node_vars(u_element, equations, dg, i)
 
         # All diagonal entries of `derivative_split` are zero. Thus, we can skip
         # the computation of the diagonal terms. In addition, we use the symmetry
@@ -104,13 +110,13 @@ end
         # computations.
 
         # x direction
-        for ii in (i + 1):nnodes(dg, cache.elements, element)
-            u_node_ii = get_node_vars(u, equations, dg, ii, element)
+        for ii in (i + 1):nnodes(basis)
+            u_node_ii = get_node_vars(u_element, equations, dg, ii)
             flux1 = volume_flux(u_node, u_node_ii, 1, equations)
-            multiply_add_to_node_vars!(du, alpha * derivative_split[i, ii], flux1,
-                                       equations, dg, i, element)
-            multiply_add_to_node_vars!(du, alpha * derivative_split[ii, i], flux1,
-                                       equations, dg, ii, element)
+            multiply_add_to_node_vars!(du_element, alpha * derivative_split[i, ii], flux1,
+                                       equations, dg, i)
+            multiply_add_to_node_vars!(du_element, alpha * derivative_split[ii, i], flux1,
+                                       equations, dg, ii)
         end
     end
 end
@@ -120,26 +126,28 @@ end
     # boundary_lift is nonzero only at the two endpoint nodes for Lobatto-like bases
     boundary_lift = basis.boundary_lift
     n = nnodes(basis)
+    du_element = du[element]
     factor_neg = boundary_lift[1, 1]
     factor_pos = boundary_lift[n, 2]
     for v in eachvariable(equations)
-        du[v, 1, element] = du[v, 1, element] -
-                            surface_flux_values[v, 1, element] * factor_neg
-        du[v, n, element] = du[v, n, element] +
-                            surface_flux_values[v, 2, element] * factor_pos
+        du_element[v, 1] = du_element[v, 1] -
+                           surface_flux_values[v, 1, element] * factor_neg
+        du_element[v, n] = du_element[v, n] +
+                           surface_flux_values[v, 2, element] * factor_pos
     end
 end
 
 @inline function apply_surface_lift!(du, surface_flux_values, element,
                                      basis::GeneralSBPCellBasis, equations)
     boundary_lift = basis.boundary_lift
+    du_element = du[element]
     for i in eachnode(basis)
         factor_neg = boundary_lift[i, 1]
         factor_pos = boundary_lift[i, 2]
         for v in eachvariable(equations)
-            du[v, i, element] = (du[v, i, element] -
-                                 surface_flux_values[v, 1, element] * factor_neg +
-                                 surface_flux_values[v, 2, element] * factor_pos)
+            du_element[v, i] = (du_element[v, i] -
+                                surface_flux_values[v, 1, element] * factor_neg +
+                                surface_flux_values[v, 2, element] * factor_pos)
         end
     end
 end
@@ -164,9 +172,11 @@ function apply_jacobian!(backend::Nothing, du, mesh::TreeMesh{1},
                          equations, dg::DGFSBP, cache)
     ET = eltype(du)
     @threaded for element in eachelement(dg, cache)
-        for i in eachnode(dg, cache.elements, element)
+        basis = cache.elements.bases[element]
+        du_element = du[element]
+        for i in eachnode(basis)
             for v in eachvariable(equations)
-                du[v, i, element] *= -one(ET)
+                du_element[v, i] *= -one(ET)
             end
         end
     end
