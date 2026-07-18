@@ -25,17 +25,9 @@ Base.eltype(::WrappedArray{NDIMS, T, A, WA}) where {NDIMS, T, A, WA} = T
 
 trixi_backend(::WrappedArray) = nothing
 
-@inline function convert_index(a::WrappedArray{NDIMS, T, A, WA},
-                               (i_vars, i_dims...,
-                                element)) where {NDIMS, T,
-                                                 A <:
-                                                 AbstractVector{T},
-                                                 WA
-                                                 }
-    sizes = a.num_nodes_in_element[element]
-    i_vars +
-    sum(a.nvars * prod(sizes[1:(d - 1)]) *
-        (i_dims[d] - 1) for d in 1:NDIMS) + a.offsets[element]
+@inline function convert_index(a::WrappedArray, (i_vars, i_dims..., element))
+    LinearIndices((a.nvars, a.num_nodes_in_element[element]...))[i_vars, i_dims...] +
+        a.offsets[element]
 end
 
 function Base.getindex(a::WrappedArray{NDIMS, T, A, WA},
