@@ -32,8 +32,10 @@ end
 
 function Base.getindex(a::WrappedArray{NDIMS, T, A, WA},
                        element::Int) where {NDIMS, T, A <: AbstractVector{T}, WA}
-    unsafe_wrap(WA, pointer(a.a, a.offsets[element] + 1),
-                (a.nvars, a.num_nodes_in_element[element]...))
+    o = a.offsets[element]
+    len = a.nvars * prod(a.num_nodes_in_element[element])
+    # stack-allocated view into this element's slice, shaped (nvars, nodes...)
+    reshape(view(a.a, (o + 1):(o + len)), (a.nvars, a.num_nodes_in_element[element]...))
 end
 
 function Base.getindex(a::WrappedArray{NDIMS, T, A, WA},
