@@ -48,13 +48,6 @@ function TreeElementBasisContainer1D{RealT, uEltype, CellBasisT}(capacity::Integ
                                                                    _surface_flux_values)
 end
 
-@inline function get_node_vars(u::WrappedArray{1}, equations, solver::DGFSBP,
-                               i::Int, element::Int)
-    idx_base = u.nvars * (i - 1) + u.offsets[element]
-    SVector(ntuple(@inline(v->@inbounds(u.a[v + idx_base])),
-                   Val(nvariables(equations))))
-end
-
 @inline Base.real(::TreeElementBasisContainer1D{RealT, uEltype, CellBasisT}) where {
 RealT <: Real,
 uEltype <: Real,
@@ -82,8 +75,6 @@ end
 
 num_total_nodes(elements::TreeElementBasisContainer1D) = elements.offsets[end] ÷
                                                          elements.nvars
-
-quadrature_weights(::DGFSBP, elements::TreeElementBasisContainer1D, element) = quadrature_weights(elements.bases[element])
 
 # Create element container and initialize element data
 function init_elements(cell_ids, mesh::TreeMesh1D,
@@ -189,9 +180,8 @@ function allocate_coefficients(::AbstractMesh, equations, ::DGFSBP, cache)
     return u_ode
 end
 
-@inline function get_node_coords(elements::TreeElementBasisContainer1D, indices...)
-    x1 = get_nodes(elements.bases[indices[end]])[indices[begin:(end - 1)]...]
-    SVector(x1)
+@inline function get_node_coords(elements::TreeElementBasisContainer1D, i, element)
+    SVector(get_nodes(elements.bases[element])[i])
 end
 
 @inline function get_node_coords(elements::TreeElementBasisContainer1D, equations,

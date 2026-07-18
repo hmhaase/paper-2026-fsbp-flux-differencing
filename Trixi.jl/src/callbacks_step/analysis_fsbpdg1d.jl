@@ -33,8 +33,9 @@ function integrate_via_indices(func::Func, u,
 
     # Use quadrature to numerically integrate over entire domain
     @batch reduction=(+, integral) for element in eachelement(dg, cache)
-        weights = quadrature_weights(cache.elements.bases[element])
-        for i in eachnode(dg, cache.elements, element)
+        basis = cache.elements.bases[element]
+        weights = quadrature_weights(basis)
+        for i in eachnode(basis)
             integral += weights[i] *
                         func(u, i, element, equations, dg, args...)
         end
@@ -62,22 +63,24 @@ function calc_error_norms(func, u, t, analyzer,
                           dg::DGFSBP, cache, cache_analysis)
 
     # Set up data structures
-    l2_error = zero(func(get_node_vars(u, equations, dg, 1, 1), equations))
+    l2_error = zero(func(get_node_vars(u[1], equations, dg, 1), equations))
     linf_error = copy(l2_error)
 
     if isnothing(analyzer.analysis_polydeg)
         # Iterate over all elements for error calculations
         for element in eachelement(dg, cache)
-            weights = quadrature_weights(dg, cache.elements, element)
+            basis = cache.elements.bases[element]
+            u_element = u[element]
+            weights = quadrature_weights(basis)
 
             # for i in eachnode(analyzer)
-            for i in eachnode(dg, cache.elements, element)
+            for i in eachnode(basis)
                 u_exact = exact_solution(get_node_coords(cache.elements, equations, dg,
                                                          i,
                                                          element), t,
                                          equations)
                 diff = func(u_exact, equations) -
-                       func(get_node_vars(u, equations, dg, i, element), equations)
+                       func(get_node_vars(u_element, equations, dg, i), equations)
                 l2_error += diff .^ 2 * weights[i]
                 linf_error = @. max(linf_error, abs(diff))
             end
