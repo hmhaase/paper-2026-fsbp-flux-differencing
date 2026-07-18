@@ -167,7 +167,7 @@ end
 
 function wrap_array(u_ode::AbstractVector, mesh::AbstractMesh, equations,
                     dg::DGFSBP, cache)
-    WrappedArray(Val(ndims(equations)), nvariables(equations),
+    WrappedArray(Val(index_ndims(eltype(cache.elements.bases))), nvariables(equations),
                  cache.elements.num_nodes_in_element,
                  cache.elements.offsets, u_ode)
 end

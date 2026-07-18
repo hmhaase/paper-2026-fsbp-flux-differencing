@@ -32,7 +32,8 @@ Fields:
 """
 abstract type LineBasis{RealT} <: CellBasis{RealT} end
 
-@inline index_ndims(::LineBasis) = 1
+@inline index_ndims(basis::CellBasis) = index_ndims(typeof(basis))
+@inline index_ndims(::Type{<:LineBasis}) = 1
 
 """
     LobattoLikeCellBasis <: LineBasis
@@ -237,7 +238,7 @@ function TensorProductCellBasis(bases::Tuple)
     return TensorProductCellBasis{length(bases), RealT, typeof(bases)}(bases)
 end
 
-@inline index_ndims(::TensorProductCellBasis{NDIMS}) where {NDIMS} = NDIMS
+@inline index_ndims(::Type{<:TensorProductCellBasis{NDIMS}}) where {NDIMS} = NDIMS
 @inline Base.real(::TensorProductCellBasis{NDIMS, RealT}) where {NDIMS, RealT} = RealT
 @inline ndofs_per_element(basis::TensorProductCellBasis) = prod(nnodes, basis.bases)
 @inline eachnode(basis::TensorProductCellBasis) = CartesianIndices(map(nnodes, basis.bases))
