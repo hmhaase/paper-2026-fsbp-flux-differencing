@@ -4025,6 +4025,27 @@ end
     end
 end
 
+@testitem "Unit: TensorProductCellBasis FSBP" setup=[Setup, UnitTests] tags=[:misc_part1] begin
+    using Trixi
+
+    # anisotropic tensor cell [1, 3] x [-1, 2], degrees 3 (x) and 2 (y)
+    bx = Trixi.LobattoLegendreCellBasis(3, 2.0, 2.0)
+    by = Trixi.LobattoLegendreCellBasis(2, 0.5, 3.0)
+    tp = Trixi.TensorProductCellBasis((bx, by))
+
+    xs = Trixi.get_nodes(bx); wx = Trixi.quadrature_weights(bx)
+    ys = Trixi.get_nodes(by); wy = Trixi.quadrature_weights(by)
+
+    # tensor quadrature over the cell, exact up to per-axis degree 2m-3 (5 in x, 3 in y)
+    for (a, b) in ((0, 0), (5, 3), (4, 1))
+        quad = sum(wx[I[1]] * wy[I[2]] * xs[I[1]]^a * ys[I[2]]^b
+                   for I in Trixi.eachnode(tp))
+        exact = (3.0^(a + 1) - 1.0^(a + 1)) / (a + 1) *
+                (2.0^(b + 1) - (-1.0)^(b + 1)) / (b + 1)
+        @test quad ≈ exact
+    end
+end
+
 @testitem "Unit: ndims function for SemidiscretizaionHyperbolicSplit" setup=[
     Setup,
     UnitTests

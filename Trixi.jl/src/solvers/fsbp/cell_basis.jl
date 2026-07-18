@@ -4,36 +4,42 @@ struct Negative end
 struct Positive end
 
 """
-    CellBasis
+    CellBasis{RealT}
 
-Base type for all cell local bases. Must implement:
-
-Methods:
-- get_nodes(::CellBasis)
-- eachnode(::CellBasis)
-- nnodes(::CellBasis)
-- quadrature_weights(::CellBasis)
-- interpolation_matrix(::CellBasis, nodes_out)
+Base type for a basis on one element. Must implement:
 - real(::CellBasis)
-
-Attributes:
-- derivative_split
-  2D - M⁻¹B for strong derivative matrix D
-- boundary_lift
-  Matrix L such that \$L^T M u = [u_L, u_R]T\$, that is \$L = M⁻¹ [e_1, e_N]\$
-- derivative_dhat
-  Weak form matrix dhat such that (dhat * f)_j approximates the weak derivative
-  at node j: dhat[j,n] = -D'[j,n] * w[n] / w[j] where D is the strong-form
-  derivative matrix and w are the quadrature weights.
+- ndofs_per_element(::CellBasis)
+- eachnode(::CellBasis)
+- index_ndims(::CellBasis)
 """
 abstract type CellBasis{RealT} end
 
 """
-    LobattoLikeCellBasis <: CellBasis
+    LineBasis{RealT} <: CellBasis{RealT}
+
+A 1D SBP operator (one node set + its matrices/boundary operators). In addition to the
+`CellBasis` methods, must implement:
+- get_nodes(::LineBasis)
+- nnodes(::LineBasis)
+- quadrature_weights(::LineBasis)
+- interpolation_matrix(::LineBasis, nodes_out)
+- boundary_value!, boundary_coordinate
+
+Fields:
+- boundary_lift    # L = M⁻¹[e_1, e_N], so LᵀM u = [u_L, u_R]ᵀ
+- derivative_split # M⁻¹B, strong form
+- derivative_dhat  # weak form, dhat[j,n] = -D'[j,n] w[n] / w[j]
+"""
+abstract type LineBasis{RealT} <: CellBasis{RealT} end
+
+@inline index_ndims(::LineBasis) = 1
+
+"""
+    LobattoLikeCellBasis <: LineBasis
 
 Basis including boundary nodes with quadrature_weights similar to a Gauss-Lobatto quadrature rule.
 """
-struct LobattoLikeCellBasis{RealT <: Real} <: CellBasis{RealT}
+struct LobattoLikeCellBasis{RealT <: Real} <: LineBasis{RealT}
     _nodes::Vector{RealT}
     _weights::Vector{RealT}
     # _inverse_weights::Vector{RealT}
@@ -142,7 +148,7 @@ function LobattoLegendreCellBasis(polydeg::Int, pos::RealT, dx::RealT) where {Re
 end
 
 """
-    GeneralSBPCellBasis <: CellBasis
+    GeneralSBPCellBasis <: LineBasis
 
 Basis for general SBP operators where nodes need not include element boundaries.
 The boundary interpolation/extrapolation operator R is stored as `boundary_interpolation`
@@ -154,7 +160,7 @@ Unlike `LobattoLikeCellBasis`, this type stores an explicit `boundary_interpolat
 and a `boundary_nodes` field for the physical element boundary coordinates.
 `LobattoLikeCellBasis` has neither of these.
 """
-struct GeneralSBPCellBasis{RealT <: Real} <: CellBasis{RealT}
+struct GeneralSBPCellBasis{RealT <: Real} <: LineBasis{RealT}
     _nodes::Vector{RealT}
     _weights::Vector{RealT}
     "M⁻¹Rᵀ, size (nnodes, 2); same field name and layout as LobattoLikeCellBasis.boundary_lift"
@@ -215,3 +221,23 @@ function GeneralSBPCellBasis(nodes, boundary_nodes, weights, D, calc_interpolati
                                Matrix{RealT}(derivative_dhat),
                                calc_interpolation_matrix)
 end
+
+"""
+    TensorProductCellBasis{NDIMS, RealT, B} <: CellBasis{RealT}
+
+Tensor product of `NDIMS` `LineBasis`es (one per axis; types may differ).
+"""
+struct TensorProductCellBasis{NDIMS, RealT,
+                              B <: Tuple{Vararg{LineBasis{RealT}}}} <: CellBasis{RealT}
+    bases::B
+end
+
+function TensorProductCellBasis(bases::Tuple)
+    RealT = real(first(bases))
+    return TensorProductCellBasis{length(bases), RealT, typeof(bases)}(bases)
+end
+
+@inline index_ndims(::TensorProductCellBasis{NDIMS}) where {NDIMS} = NDIMS
+@inline Base.real(::TensorProductCellBasis{NDIMS, RealT}) where {NDIMS, RealT} = RealT
+@inline ndofs_per_element(basis::TensorProductCellBasis) = prod(nnodes, basis.bases)
+@inline eachnode(basis::TensorProductCellBasis) = CartesianIndices(map(nnodes, basis.bases))
