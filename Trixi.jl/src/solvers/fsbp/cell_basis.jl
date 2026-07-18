@@ -62,6 +62,7 @@ end
 get_nodes(basis::LobattoLikeCellBasis) = basis._nodes
 eachnode(basis::LobattoLikeCellBasis) = Base.OneTo(nnodes(basis))
 nnodes(basis::LobattoLikeCellBasis) = length(basis._nodes)
+ndofs_per_element(basis::LobattoLikeCellBasis) = nnodes(basis)
 quadrature_weights(basis::LobattoLikeCellBasis) = basis._weights
 
 # TODO: Consider specifying a formal description of where the new nodes should be
@@ -170,6 +171,7 @@ end
 get_nodes(basis::GeneralSBPCellBasis) = basis._nodes
 eachnode(basis::GeneralSBPCellBasis) = Base.OneTo(nnodes(basis))
 nnodes(basis::GeneralSBPCellBasis) = length(basis._nodes)
+ndofs_per_element(basis::GeneralSBPCellBasis) = nnodes(basis)
 quadrature_weights(basis::GeneralSBPCellBasis) = basis._weights
 
 function interpolation_matrix(basis::GeneralSBPCellBasis, nodes_out)
