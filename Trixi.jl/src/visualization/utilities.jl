@@ -593,6 +593,40 @@ function get_unstructured_data(u, solution_variables, mesh, equations, solver, c
     return unstructured_data
 end
 
+# Resample ragged FSBP elements onto a common N×N Gauss-Lobatto grid so `get_data_2d` applies.
+function get_unstructured_data(u::WrappedArray, solution_variables, mesh::TreeMesh{2},
+                               equations, solver::DGFSBP, cache)
+    elements = cache.elements
+    N = maximum(max(nx, ny) for (nx, ny) in elements.num_nodes_in_element)
+    lobatto, _ = gauss_lobatto_nodes_weights(N)
+
+    n_vars = length(solution_variables(get_node_vars(u[1], equations, solver, 1, 1),
+                                       equations))
+    data = Array{eltype(elements)}(undef, N, N, nelements(elements), n_vars)
+
+    for element in eachelement(elements)
+        bx, by = elements.bases[element].bases
+        uel = u[element]
+        nx, ny = elements.num_nodes_in_element[element]
+
+        xl, xr = boundary_coordinate(bx, Negative()), boundary_coordinate(bx, Positive())
+        yl, yr = boundary_coordinate(by, Negative()), boundary_coordinate(by, Positive())
+        Vx = interpolation_matrix(bx, @. 0.5 * ((1 - lobatto) * xl + (1 + lobatto) * xr))
+        Vy = interpolation_matrix(by, @. 0.5 * ((1 - lobatto) * yl + (1 + lobatto) * yr))
+
+        raw = Array{eltype(elements)}(undef, n_vars, nx, ny)
+        for j in 1:ny, i in 1:nx
+            raw[:, i, j] .= solution_variables(get_node_vars(uel, equations, solver, i, j),
+                                               equations)
+        end
+        for v in 1:n_vars
+            @views data[:, :, element, v] .= Vx * raw[v, :, :] * Vy'
+        end
+    end
+
+    return data
+end
+
 # This method is only for plotting 1D functions
 function get_unstructured_data(func::Function, solution_variables,
                                mesh::AbstractMesh{1}, equations, solver, cache)

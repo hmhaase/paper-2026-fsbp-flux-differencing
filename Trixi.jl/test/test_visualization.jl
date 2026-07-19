@@ -162,6 +162,30 @@ end
             end
         end
     end
+
+    @timed_testset "PlotData2D for FSBP" begin
+        # A Lobatto-Legendre DGFSBP tensor basis is the same operator as DGSEM, so on the
+        # same uniform mesh the plot data must match to round-off.
+        @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_2d_fsbp",
+                                     "elixir_advection_basic.jl"))
+        pd_fsbp = PlotData2D(sol)
+        @test pd_fsbp isa Trixi.PlotData2DCartesian
+
+        @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_2d_dgsem",
+                                     "elixir_advection_basic.jl"))
+        pd_dgsem = PlotData2D(sol)
+
+        @test pd_fsbp.x == pd_dgsem.x
+        @test pd_fsbp.y == pd_dgsem.y
+        @test maximum(maximum(abs, pd_fsbp.data[v] .- pd_dgsem.data[v])
+                      for v in eachindex(pd_fsbp.data)) < 1e-12
+
+        @trixi_test_nowarn show(stdout, pd_fsbp)
+        println(stdout)
+        @trixi_test_nowarn Plots.plot(sol)
+        @trixi_test_nowarn Plots.plot(pd_fsbp["scalar"])
+        @trixi_test_nowarn Plots.plot(getmesh(pd_fsbp))
+    end
 end
 @testitem "Visualization: ScalarPlotData2D with DGMulti Quad elements" setup=[
     Setup,

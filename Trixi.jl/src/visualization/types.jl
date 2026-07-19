@@ -224,6 +224,18 @@ function PlotData2D(u_ode, semi; kwargs...)
                       kwargs...)
 end
 
+# FSBP has no uniform node count, so wrap ragged (`wrap_array`), not `wrap_array_native`.
+function PlotData2D(u_ode::AbstractVector,
+                    semi::SemidiscretizationHyperbolic{Mesh, Equations, InitialCondition,
+                                                       BoundaryConditions, SourceTerms,
+                                                       Solver, Cache};
+                    kwargs...) where {Solver <: DGFSBP, Mesh, Equations, InitialCondition,
+                                      BoundaryConditions, SourceTerms, Cache}
+    return PlotData2D(wrap_array(u_ode, semi),
+                      mesh_equations_solver_cache(semi)...;
+                      kwargs...)
+end
+
 function PlotData2D(u_ode, semi::SemidiscretizationCoupled; kwargs...)
     plot_data_array = []
     @unpack semis = semi
@@ -282,7 +294,7 @@ function PlotData2DCartesian(u, mesh::TreeMesh, equations, solver, cache;
                                                                coordinates, levels,
                                                                ndims(mesh),
                                                                unstructured_data,
-                                                               nnodes(solver),
+                                                               size(unstructured_data, 1),
                                                                grid_lines,
                                                                max_supported_level,
                                                                nvisnodes,
