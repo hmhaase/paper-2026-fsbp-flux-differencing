@@ -693,6 +693,7 @@ end # @muladd
 include("analysis_dg1d.jl")
 include("analysis_blockfv_1d.jl")
 include("analysis_fsbpdg1d.jl")
+include("analysis_fsbpdg2d.jl")
 include("analysis_dg2d.jl")
 include("analysis_blockfv_2d.jl")
 include("analysis_surface_integral.jl")
