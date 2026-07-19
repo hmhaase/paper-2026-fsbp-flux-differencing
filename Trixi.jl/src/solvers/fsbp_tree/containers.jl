@@ -111,12 +111,12 @@ function init_elements!(elements, cell_ids, mesh::TreeMesh1D, basis::PerCellBasi
         # Get cell length
         dx = length_at_cell(mesh.tree, cell_id)
 
-        basis_ref = Ref(elements.bases, element)
-        init_local_basis!(basis.local_basis_constructor, basis_ref,
-                          mesh.tree.coordinates[1, cell_id], dx)
+        cell_basis = build_cell_basis(basis.local_basis_constructor,
+                                      mesh.tree.coordinates[1, cell_id], dx)
+        elements.bases[element] = cell_basis
         elements.offsets[element + 1] = elements.offsets[element] +
-                                        n_vars * ndofs_per_element(basis_ref[])
-        elements.num_nodes_in_element[element] = (nnodes(basis_ref[]),)
+                                        n_vars * ndofs_per_element(cell_basis)
+        elements.num_nodes_in_element[element] = (nnodes(cell_basis),)
     end
 
     return elements

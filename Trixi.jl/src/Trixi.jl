@@ -327,6 +327,7 @@ export DG,
        CellBasisConstructor, LobattoLegendreCellBasisConstructor,
        ReferenceCellBasisConstructor,
        MixedCellBasisConstructor,
+       TensorProductCellBasisConstructor,
        DGFSBP
 
 export reconstruction_O2_inner, reconstruction_O2_full,

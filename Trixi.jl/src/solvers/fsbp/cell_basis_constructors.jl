@@ -2,12 +2,11 @@ abstract type CellBasisConstructor{CellBasisT} end
 
 cell_basis_type(::Type{<:CellBasisConstructor{B}}) where {B} = B
 """
-    init_local_basis!(constructor::CellBasisConstructor, basis_ref, args...)
+    build_cell_basis(constructor::CellBasisConstructor, pos, dx)
 
-Initalize an allocated basis for a given cell.
-    basis_ref[] = ...
+Build the basis for one cell centered at `pos` with width `dx`.
 """
-init_local_basis!(::CellBasisConstructor, basis_ref, args...) = error("not implemented")
+build_cell_basis(::CellBasisConstructor, pos, dx) = error("not implemented")
 
 @inline Base.real(::C) where {RealT, B <: CellBasis{RealT}, C <: CellBasisConstructor{B}} = RealT
 
@@ -26,10 +25,10 @@ struct LobattoLegendreCellBasisConstructor{RealT} <:
     end
 end
 
-function init_local_basis!(constructor::LobattoLegendreCellBasisConstructor{RealT},
-                           basis_ref, pos, dx) where {RealT <: Real}
+function build_cell_basis(constructor::LobattoLegendreCellBasisConstructor{RealT},
+                          pos, dx) where {RealT <: Real}
     polydeg = constructor.calc_poly_degree(pos, dx)
-    basis_ref[] = LobattoLegendreCellBasis(polydeg, pos, dx)
+    return LobattoLegendreCellBasis(polydeg, pos, dx)
 end
 
 """
@@ -90,10 +89,10 @@ function _build_cell_basis(::Type{<:GeneralSBPCellBasis},
     GeneralSBPCellBasis(nodes, boundary_nodes, weights, D_phys, interp)
 end
 
-function init_local_basis!(constructor::ReferenceCellBasisConstructor{RealT, CellBasisT},
-                           basis_ref, pos, dx) where {RealT <: Real, CellBasisT}
+function build_cell_basis(constructor::ReferenceCellBasisConstructor{RealT, CellBasisT},
+                          pos, dx) where {RealT <: Real, CellBasisT}
     nodes, weights, D_phys, interp = _map_to_physical(constructor, pos, dx)
-    basis_ref[] = _build_cell_basis(CellBasisT, nodes, weights, D_phys, interp, pos, dx)
+    return _build_cell_basis(CellBasisT, nodes, weights, D_phys, interp, pos, dx)
 end
 
 struct MixedCellBasisConstructor{RealT, CellBasisT <: CellBasis{RealT},
@@ -122,7 +121,39 @@ function MixedCellBasisConstructor(constructors::Constructors, selector::Functio
     MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(constructors, selector)
 end
 
-function init_local_basis!(c::MixedCellBasisConstructor, basis_ref, pos, dx)
+function build_cell_basis(c::MixedCellBasisConstructor, pos, dx)
     chosen = c.selector(c.constructors, pos, dx)
-    init_local_basis!(chosen, basis_ref, pos, dx)
+    return build_cell_basis(chosen, pos, dx)
+end
+
+"""
+    TensorProductCellBasisConstructor{NDIMS, Ctors, BasisT}
+
+Builds a `TensorProductCellBasis` from one 1D constructor per axis. `pos` and `dx` are
+indexed per axis (`pos[d]`, `dx[d]`), so cells need not be square.
+"""
+struct TensorProductCellBasisConstructor{NDIMS, Ctors <: Tuple,
+                                         BasisT <: CellBasis} <:
+       CellBasisConstructor{BasisT}
+    constructors::Ctors
+end
+
+function TensorProductCellBasisConstructor(constructors::Tuple)
+    RealT = real(first(constructors))
+    basis_types = map(c -> cell_basis_type(typeof(c)), constructors)
+    BasisT = TensorProductCellBasis{length(constructors), RealT, Tuple{basis_types...}}
+    return TensorProductCellBasisConstructor{length(constructors), typeof(constructors),
+                                             BasisT}(constructors)
+end
+
+function build_cell_basis(c::TensorProductCellBasisConstructor{NDIMS}, pos,
+                          dx) where {NDIMS}
+    bases = ntuple(d -> build_cell_basis(c.constructors[d], pos[d], dx[d]), Val(NDIMS))
+    return TensorProductCellBasis(bases)
+end
+
+# Wrap a 1D constructor into an isotropic `NDIMS`-axis tensor product; leave a tensor one.
+as_tensor(c::TensorProductCellBasisConstructor, ::Val) = c
+function as_tensor(c::CellBasisConstructor, ::Val{NDIMS}) where {NDIMS}
+    return TensorProductCellBasisConstructor(ntuple(_ -> c, Val(NDIMS)))
 end
