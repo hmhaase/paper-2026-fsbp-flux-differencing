@@ -26,8 +26,8 @@ A 1D SBP operator (one node set + its matrices/boundary operators). In addition 
 - boundary_value!, boundary_coordinate
 
 Fields:
-- boundary_lift    # L = M⁻¹[e_1, e_N], so LᵀM u = [u_L, u_R]ᵀ
-- derivative_split # M⁻¹B, strong form
+- boundary_lift    # M⁻¹Rᵀ, [nnodes, 2] (Lobatto: R = [e_1, e_N]ᵀ)
+- derivative_split # 2D - M⁻¹B, skew-symmetric split form (flux differencing)
 - derivative_dhat  # weak form, dhat[j,n] = -D'[j,n] w[n] / w[j]
 """
 abstract type LineBasis{RealT} <: CellBasis{RealT} end
@@ -46,11 +46,11 @@ struct LobattoLikeCellBasis{RealT <: Real} <: LineBasis{RealT}
     # _inverse_weights::Vector{RealT}
 
     # _inverse_vandermonde_legendre::Matrix{RealT}
-    "Matrix L such that \$L^T M u = [u_L, u_R]T\$, that is \$L = M⁻¹ [e_1, e_N]\$"
+    "Matrix L such that \$L^T M u = [u_L, u_R]^T\$, that is \$L = M⁻¹ [e_1, e_N]\$"
     boundary_lift::Matrix{RealT} # lhat
 
     # _derivative_matrix::Matrix{RealT} # strong form derivative matrix
-    derivative_split::Matrix{RealT} # strong form derivative matrix minus boundary terms
+    derivative_split::Matrix{RealT} # 2D - M⁻¹B, skew-symmetric split form
     # _derivative_split_transpose::Matrix{RealT} # transpose of `derivative_split`
     derivative_dhat::Matrix{RealT} # weak form matrix "dhat"
 
@@ -156,10 +156,6 @@ The boundary interpolation/extrapolation operator R is stored as `boundary_inter
 (shape `(2, nnodes)`, row 1 = left/−x, row 2 = right/+x) and maps node values to boundary
 values.  `boundary_lift = M⁻¹Rᵀ` (shape `(nnodes, 2)`) is pre-computed for the surface
 integral hot path.
-
-Unlike `LobattoLikeCellBasis`, this type stores an explicit `boundary_interpolation` field
-and a `boundary_nodes` field for the physical element boundary coordinates.
-`LobattoLikeCellBasis` has neither of these.
 """
 struct GeneralSBPCellBasis{RealT <: Real} <: LineBasis{RealT}
     _nodes::Vector{RealT}
@@ -207,7 +203,7 @@ function GeneralSBPCellBasis(nodes, boundary_nodes, weights, D, calc_interpolati
 
     # derivative_split = 2D − M⁻¹B,  B = Rᵀ diag(−1, 1) R
     # [-1,1] .* boundary_interpolation scales row 1 by -1 and row 2 by +1 (diag(-1,1)*R)
-    # then (n×2)*(2×n) gives B = RᵀDB
+    # then (n×2)*(2×n) gives B
     B = boundary_interpolation' * ([-one(RealT), one(RealT)] .* boundary_interpolation)
     derivative_split = 2 * D - (1 ./ weights) .* B
 
