@@ -1,3 +1,10 @@
+# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
+# Since these FMAs can increase the performance of many numerical algorithms,
+# we need to opt-in explicitly.
+# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
+@muladd begin
+#! format: noindent
+
 """
     WrappedArray{NDIMS, T, A, WA}
 
@@ -56,3 +63,4 @@ function Base.setindex!(a::WrappedArray{NDIMS, T, A, WA}, x,
                                         A <: AbstractVector{T}, WA}
     a.a[convert_index(a, idcs)] = x
 end
+end # @muladd

@@ -1,3 +1,10 @@
+# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
+# Since these FMAs can increase the performance of many numerical algorithms,
+# we need to opt-in explicitly.
+# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
+@muladd begin
+#! format: noindent
+
 abstract type CellBasisConstructor{CellBasisT} end
 
 cell_basis_type(::Type{<:CellBasisConstructor{B}}) where {B} = B
@@ -49,12 +56,13 @@ struct ReferenceCellBasisConstructor{RealT, CellBasisT <: CellBasis{RealT}} <:
 
     function ReferenceCellBasisConstructor{RealT, CellBasisT}(D, x, w,
                                                               calc_interpolation_matrix,
-                                                              domain::Tuple{RealT, RealT}) where {
-                                                                                                  RealT <:
-                                                                                                  Real,
-                                                                                                  CellBasisT <:
-                                                                                                  CellBasis{RealT}
-                                                                                                  }
+                                                              domain::Tuple{RealT,
+                                                                            RealT}) where {
+                                                                                           RealT <:
+                                                                                           Real,
+                                                                                           CellBasisT <:
+                                                                                           CellBasis{RealT}
+                                                                                           }
         @assert size(D, 1) == size(D, 2) == length(x) == length(w)
         @assert domain[1] < domain[2]
         new{RealT, CellBasisT}(Matrix{RealT}(D), Vector{RealT}(x), Vector{RealT}(w),
@@ -123,8 +131,10 @@ struct MixedCellBasisConstructor{RealT, CellBasisT <: CellBasis{RealT},
 end
 
 function MixedCellBasisConstructor(constructors::Constructors,
-                                   selector::Function) where {Constructors <: NamedTuple}
-    CellBasisT = Union{map(ctor -> cell_basis_type(typeof(ctor)), Tuple(constructors))...}
+                                   selector::Function) where {Constructors <:
+                                                              NamedTuple}
+    CellBasisT = Union{map(ctor -> cell_basis_type(typeof(ctor)),
+                           Tuple(constructors))...}
     RealT = real(first(constructors))
     MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(constructors, selector)
 end
@@ -169,3 +179,4 @@ as_tensor(c::TensorProductCellBasisConstructor, ::Val) = c
 function as_tensor(c::CellBasisConstructor, ::Val{NDIMS}) where {NDIMS}
     return TensorProductCellBasisConstructor(ntuple(_ -> c, Val(NDIMS)))
 end
+end # @muladd

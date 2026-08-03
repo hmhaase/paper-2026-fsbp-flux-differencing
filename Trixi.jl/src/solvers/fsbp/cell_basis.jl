@@ -1,3 +1,10 @@
+# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
+# Since these FMAs can increase the performance of many numerical algorithms,
+# we need to opt-in explicitly.
+# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
+@muladd begin
+#! format: noindent
+
 "Marker for the face at the negative end of an axis (left in 1D)."
 struct Negative end
 "Marker for the face at the positive end of an axis (right in 1D)."
@@ -106,7 +113,8 @@ end
     end
 end
 
-function LobattoLikeCellBasis(nodes, weights, derivative_matrix, calc_interpolation_matrix)
+function LobattoLikeCellBasis(nodes, weights, derivative_matrix,
+                              calc_interpolation_matrix)
     RealT = eltype(nodes)
     @assert RealT <: Real
     boundary_lift = zeros(RealT, length(nodes), 2)
@@ -133,7 +141,8 @@ end
 
 Construct the standard Lobatto Legendre Basis with Gauss-Lobatto quadrature.
 """
-function LobattoLegendreCellBasis(polydeg::Int, pos::RealT, dx::RealT) where {RealT <: Real}
+function LobattoLegendreCellBasis(polydeg::Int, pos::RealT,
+                                  dx::RealT) where {RealT <: Real}
     nnodes_ = polydeg + 1
 
     nodes, weights = gauss_lobatto_nodes_weights(nnodes_, RealT)
@@ -226,7 +235,8 @@ end
     end
 end
 
-function GeneralSBPCellBasis(nodes, boundary_nodes, weights, D, calc_interpolation_matrix)
+function GeneralSBPCellBasis(nodes, boundary_nodes, weights, D,
+                             calc_interpolation_matrix)
     RealT = eltype(nodes)
     n = length(nodes)
     @assert size(D) == (n, n)
@@ -277,4 +287,6 @@ end
 @inline index_ndims(::Type{<:TensorProductCellBasis{NDIMS}}) where {NDIMS} = NDIMS
 @inline Base.real(::TensorProductCellBasis{NDIMS, RealT}) where {NDIMS, RealT} = RealT
 @inline ndofs_per_element(basis::TensorProductCellBasis) = prod(nnodes, basis.bases)
-@inline eachnode(basis::TensorProductCellBasis) = CartesianIndices(map(nnodes, basis.bases))
+@inline eachnode(basis::TensorProductCellBasis) = CartesianIndices(map(nnodes,
+                                                                       basis.bases))
+end # @muladd

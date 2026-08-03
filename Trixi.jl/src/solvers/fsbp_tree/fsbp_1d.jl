@@ -102,8 +102,6 @@ function calc_surface_integral!(backend::Nothing, du, u, mesh::TreeMesh{1}, equa
                                 surface_integral::SurfaceIntegralWeakForm, dg::DGFSBP,
                                 cache)
     # Note that all fluxes have been computed with outward-pointing normal vectors.
-    # We also use explicit assignments instead of `+=` to let `@muladd` turn these
-    # into FMAs (see comment at the top of the file).
     @unpack surface_flux_values = cache.elements
 
     @threaded for element in eachelement(dg, cache)
