@@ -5,32 +5,6 @@
 @muladd begin
 #! format: noindent
 
-# The generic `set_zero!` calls `du[.., element]`, which allocates an unsafe_wrap'd
-# view per element. Directly zeroing the flat backing vector avoids all allocations.
-# `trixi_backend(::WrappedArray)` is always `nothing`, so this covers every case.
-function set_zero!(::Nothing, du::WrappedArray, dg::DGFSBP, cache)
-    fill!(du.a, zero(eltype(du)))
-    return nothing
-end
-
-@inline function extract_boundary_value!(dest, u, element,
-                                         basis::LobattoLikeCellBasis, ::Negative)
-    dest .= @view u[element][:, 1]
-end
-@inline function extract_boundary_value!(dest, u, element,
-                                         basis::LobattoLikeCellBasis, ::Positive)
-    dest .= @view u[element][:, end]
-end
-
-@inline function extract_boundary_value!(dest, u, element,
-                                         basis::GeneralSBPCellBasis, ::Negative)
-    mul!(dest, u[element], @view basis.boundary_interpolation[1, :])
-end
-@inline function extract_boundary_value!(dest, u, element,
-                                         basis::GeneralSBPCellBasis, ::Positive)
-    mul!(dest, u[element], @view basis.boundary_interpolation[2, :])
-end
-
 function prolong2interfaces!(cache, u, mesh::TreeMesh{1}, equations, dg::DGFSBP)
     @unpack interfaces = cache
     bases = cache.elements.bases
@@ -38,10 +12,10 @@ function prolong2interfaces!(cache, u, mesh::TreeMesh{1}, equations, dg::DGFSBP)
     @threaded for interface in eachinterface(dg, cache)
         left_element = interfaces.neighbor_ids[1, interface]
         right_element = interfaces.neighbor_ids[2, interface]
-        extract_boundary_value!(view(interfaces.u, 1, :, interface), u, left_element,
-                                bases[left_element], Positive())
-        extract_boundary_value!(view(interfaces.u, 2, :, interface), u, right_element,
-                                bases[right_element], Negative())
+        boundary_value!(view(interfaces.u, 1, :, interface), u[left_element],
+                        bases[left_element], Positive())
+        boundary_value!(view(interfaces.u, 2, :, interface), u[right_element],
+                        bases[right_element], Negative())
     end
 
     return nothing
@@ -56,12 +30,12 @@ function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{1}, equa
         element = boundaries.neighbor_ids[boundary]
         if boundaries.neighbor_sides[boundary] == 1
             # element is in −x direction of boundary: extract from its +x (right) face
-            extract_boundary_value!(view(boundaries.u, 1, :, boundary), u, element,
-                                    bases[element], Positive())
+            boundary_value!(view(boundaries.u, 1, :, boundary), u[element],
+                            bases[element], Positive())
         else
             # element is in +x direction of boundary: extract from its −x (left) face
-            extract_boundary_value!(view(boundaries.u, 2, :, boundary), u, element,
-                                    bases[element], Negative())
+            boundary_value!(view(boundaries.u, 2, :, boundary), u[element],
+                            bases[element], Negative())
         end
     end
 
@@ -69,7 +43,7 @@ function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{1}, equa
 end
 
 @inline function weak_form_kernel!(du, u,
-                                   element, mesh::Union{TreeMesh{1}, StructuredMesh{1}},
+                                   element, ::Type{<:TreeMesh{1}},
                                    have_nonconservative_terms::False, equations,
                                    dg::DGFSBP, cache, alpha = true)
     basis = cache.elements.bases[element]
@@ -82,7 +56,8 @@ end
 
         flux1 = flux(u_node, 1, equations)
         for ii in eachnode(basis)
-            multiply_add_to_node_vars!(du_element, alpha * derivative_dhat[ii, i], flux1,
+            multiply_add_to_node_vars!(du_element, alpha * derivative_dhat[ii, i],
+                                       flux1,
                                        equations, dg, ii)
         end
     end
@@ -92,7 +67,7 @@ end
 
 @inline function flux_differencing_kernel!(du, u,
                                            element,
-                                           mesh::Union{TreeMesh{1}, StructuredMesh{1}},
+                                           ::Type{<:TreeMesh{1}},
                                            have_nonconservative_terms::False, equations,
                                            volume_flux, dg::DGFSBP, cache, alpha = true)
     basis = cache.elements.bases[element]
@@ -113,74 +88,38 @@ end
         for ii in (i + 1):nnodes(basis)
             u_node_ii = get_node_vars(u_element, equations, dg, ii)
             flux1 = volume_flux(u_node, u_node_ii, 1, equations)
-            multiply_add_to_node_vars!(du_element, alpha * derivative_split[i, ii], flux1,
+            multiply_add_to_node_vars!(du_element, alpha * derivative_split[i, ii],
+                                       flux1,
                                        equations, dg, i)
-            multiply_add_to_node_vars!(du_element, alpha * derivative_split[ii, i], flux1,
+            multiply_add_to_node_vars!(du_element, alpha * derivative_split[ii, i],
+                                       flux1,
                                        equations, dg, ii)
         end
     end
 end
 
-@inline function apply_surface_lift!(du, surface_flux_values, element,
-                                     basis::LobattoLikeCellBasis, equations)
-    # boundary_lift is nonzero only at the two endpoint nodes for Lobatto-like bases
-    boundary_lift = basis.boundary_lift
-    n = nnodes(basis)
-    du_element = du[element]
-    factor_neg = boundary_lift[1, 1]
-    factor_pos = boundary_lift[n, 2]
-    for v in eachvariable(equations)
-        du_element[v, 1] = du_element[v, 1] -
-                           surface_flux_values[v, 1, element] * factor_neg
-        du_element[v, n] = du_element[v, n] +
-                           surface_flux_values[v, 2, element] * factor_pos
-    end
-end
-
-@inline function apply_surface_lift!(du, surface_flux_values, element,
-                                     basis::GeneralSBPCellBasis, equations)
-    boundary_lift = basis.boundary_lift
-    du_element = du[element]
-    for i in eachnode(basis)
-        factor_neg = boundary_lift[i, 1]
-        factor_pos = boundary_lift[i, 2]
-        for v in eachvariable(equations)
-            du_element[v, i] = (du_element[v, i] -
-                                surface_flux_values[v, 1, element] * factor_neg +
-                                surface_flux_values[v, 2, element] * factor_pos)
-        end
-    end
-end
-
-function calc_surface_integral!(backend::Nothing, du, u,
-                                mesh::Union{TreeMesh{1}, StructuredMesh{1}},
-                                equations, surface_integral, dg::DGFSBP, cache)
+function calc_surface_integral!(backend::Nothing, du, u, mesh::TreeMesh{1}, equations,
+                                surface_integral::SurfaceIntegralWeakForm, dg::DGFSBP,
+                                cache)
     # Note that all fluxes have been computed with outward-pointing normal vectors.
     # We also use explicit assignments instead of `+=` to let `@muladd` turn these
     # into FMAs (see comment at the top of the file).
     @unpack surface_flux_values = cache.elements
 
     @threaded for element in eachelement(dg, cache)
-        apply_surface_lift!(du, surface_flux_values, element,
-                            cache.elements.bases[element], equations)
+        apply_surface_lift_line!(du[element],
+                                 view(surface_flux_values, :, 1, element),
+                                 view(surface_flux_values, :, 2, element),
+                                 cache.elements.bases[element], equations)
     end
 
     return nothing
 end
 
-function apply_jacobian!(backend::Nothing, du, mesh::TreeMesh{1},
+function apply_jacobian!(backend::Nothing, du::WrappedArray, mesh::TreeMesh{1},
                          equations, dg::DGFSBP, cache)
-    ET = eltype(du)
-    @threaded for element in eachelement(dg, cache)
-        basis = cache.elements.bases[element]
-        du_element = du[element]
-        for i in eachnode(basis)
-            for v in eachvariable(equations)
-                du_element[v, i] *= -one(ET)
-            end
-        end
-    end
-
+    # FSBP absorbs the Jacobian into the weights; only the global minus sign remains.
+    du.a .*= -one(eltype(du))
     return nothing
 end
 end # @muladd

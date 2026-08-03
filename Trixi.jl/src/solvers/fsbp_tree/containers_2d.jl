@@ -5,54 +5,6 @@
 @muladd begin
 #! format: noindent
 
-struct TreeElementBasisContainer2D{RealT <: Real,
-                                   uEltype <: Real,
-                                   CellBasisT} <:
-       AbstractTreeElementContainer
-    bases::Vector{CellBasisT}                     # [elements]
-    nvars::Int
-    num_nodes_in_element::Vector{NTuple{2, Int}}  # (nx, ny) per element
-    offsets::Vector{Int}                          # start of each element in the flat vector
-    surface_flux_values::Array{uEltype, 4}        # [variables, face node, direction (1:4), elements]
-    cell_ids::Vector{Int}                         # [elements]
-    _surface_flux_values::Vector{uEltype}         # internal `resize!`able storage
-end
-
-# `n_face_nodes` (max node count over all elements/axes) sizes the face dimension of `surface_flux_values`.
-function TreeElementBasisContainer2D{RealT, uEltype, CellBasisT}(bases, nvars,
-                                                                 num_nodes_in_element,
-                                                                 offsets, cell_ids,
-                                                                 n_face_nodes) where {RealT <:
-                                                                                      Real,
-                                                                                      uEltype <:
-                                                                                      Real,
-                                                                                      CellBasisT}
-    capacity = length(bases)
-    nan_uEltype = convert(uEltype, NaN)
-
-    _surface_flux_values = fill(nan_uEltype, nvars * n_face_nodes * 4 * capacity)
-    surface_flux_values = unsafe_wrap(Array, pointer(_surface_flux_values),
-                                      (nvars, n_face_nodes, 4, capacity))
-
-    return TreeElementBasisContainer2D{RealT, uEltype, CellBasisT}(bases, nvars,
-                                                                   num_nodes_in_element,
-                                                                   offsets,
-                                                                   surface_flux_values,
-                                                                   collect(Int, cell_ids),
-                                                                   _surface_flux_values)
-end
-
-@inline Base.real(::TreeElementBasisContainer2D{RealT}) where {RealT <: Real} = RealT
-
-@inline nelements(elements::TreeElementBasisContainer2D) = length(elements.bases)
-@inline eachelement(elements::TreeElementBasisContainer2D) = Base.OneTo(nelements(elements))
-
-num_total_nodes(elements::TreeElementBasisContainer2D) = elements.offsets[end] ÷
-                                                         elements.nvars
-
-@inline eachnode(::DGFSBP, elements::TreeElementBasisContainer2D, element) = CartesianIndices(elements.num_nodes_in_element[element])
-@inline nnodes(::DGFSBP, elements::TreeElementBasisContainer2D, element) = prod(elements.num_nodes_in_element[element])
-
 # Create element container and initialize element data.
 function init_elements(cell_ids, mesh::TreeMesh2D,
                        equations::AbstractEquations{2},
@@ -85,10 +37,30 @@ function init_elements(cell_ids, mesh::TreeMesh2D,
         n_face_nodes = max(n_face_nodes, maximum(nn))
     end
 
-    return TreeElementBasisContainer2D{RealT, uEltype, CellBasisT}(bases, n_vars,
-                                                                   num_nodes_in_element,
-                                                                   offsets, cell_ids,
-                                                                   n_face_nodes)
+    return TreeElementBasisContainer{2, RealT, uEltype, CellBasisT}(bases, n_vars,
+                                                                    num_nodes_in_element,
+                                                                    offsets, cell_ids,
+                                                                    n_face_nodes)
+end
+
+# Both sides of an interface are indexed with the left element's tangential basis.
+#TODOFSBP: lift by interpolating between the two tangential bases.
+function check_conforming_faces(interfaces, elements)
+    for interface in eachinterface(interfaces)
+        left_element = interfaces.neighbor_ids[1, interface]
+        right_element = interfaces.neighbor_ids[2, interface]
+        tangential = interfaces.orientations[interface] == 1 ? 2 : 1
+        b_l = elements.bases[left_element].bases[tangential]
+        b_r = elements.bases[right_element].bases[tangential]
+        h = boundary_coordinate(b_l, Positive()) - boundary_coordinate(b_l, Negative())
+        if nnodes(b_l) != nnodes(b_r) ||
+           !isapprox(get_nodes(b_l), get_nodes(b_r), atol = sqrt(eps(typeof(h))) * h)
+            error("DGFSBP on TreeMesh{2} requires conforming faces, but elements " *
+                  "$left_element and $right_element share an interface with " *
+                  "different tangential node counts or positions")
+        end
+    end
+    return nothing
 end
 
 # Reuse the DGSEM 2D interface/boundary containers; face-node count taken from `surface_flux_values`.
@@ -100,6 +72,7 @@ function init_interfaces(cell_ids, mesh::TreeMesh2D,
                                                             nvariables(elements),
                                                             n_face_nodes)
     init_interfaces!(interfaces, elements, mesh)
+    check_conforming_faces(interfaces, elements)
     return interfaces
 end
 
@@ -124,8 +97,7 @@ end
     get_node_coords(elements, indices...)
 end
 
-# Fill the physical coordinates of one boundary's face nodes from the element's tensor basis:
-# the normal axis sits at the element boundary, the tangential axis runs over its nodes.
+# Boundary face nodes: normal axis pinned to the element boundary, tangential axis over its nodes.
 function calc_boundary_node_coordinates!(boundaries, element, count, direction,
                                          elements::TreeElementBasisContainer2D,
                                          mesh::TreeMesh2D, basis)

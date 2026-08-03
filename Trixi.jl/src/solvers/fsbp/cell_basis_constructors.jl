@@ -8,7 +8,8 @@ Build the basis for one cell centered at `pos` with width `dx`.
 """
 build_cell_basis(::CellBasisConstructor, pos, dx) = error("not implemented")
 
-@inline Base.real(::C) where {RealT, B <: CellBasis{RealT}, C <: CellBasisConstructor{B}} = RealT
+@inline Base.real(::C) where {RealT, B <: CellBasis{RealT},
+C <: CellBasisConstructor{B}} = RealT
 
 struct LobattoLegendreCellBasisConstructor{RealT} <:
        CellBasisConstructor{LobattoLikeCellBasis{RealT}}
@@ -48,10 +49,12 @@ struct ReferenceCellBasisConstructor{RealT, CellBasisT <: CellBasis{RealT}} <:
 
     function ReferenceCellBasisConstructor{RealT, CellBasisT}(D, x, w,
                                                               calc_interpolation_matrix,
-                                                              domain::Tuple{RealT, RealT}) where {RealT <:
-                                                                                                   Real,
-                                                                                                   CellBasisT <:
-                                                                                                   CellBasis{RealT}}
+                                                              domain::Tuple{RealT, RealT}) where {
+                                                                                                  RealT <:
+                                                                                                  Real,
+                                                                                                  CellBasisT <:
+                                                                                                  CellBasis{RealT}
+                                                                                                  }
         @assert size(D, 1) == size(D, 2) == length(x) == length(w)
         @assert domain[1] < domain[2]
         new{RealT, CellBasisT}(Matrix{RealT}(D), Vector{RealT}(x), Vector{RealT}(w),
@@ -69,8 +72,8 @@ function _map_to_physical(constructor, pos, dx)
     nodes = scale .* (constructor.x .- mid_ref) .+ pos
     weights = scale .* constructor.w
     D_phys = constructor.D ./ scale
-    phys_to_ref = nodes_out -> constructor.calc_interpolation_matrix(
-        (nodes_out .- pos) ./ scale .+ mid_ref)
+    phys_to_ref = nodes_out -> constructor.calc_interpolation_matrix((nodes_out .- pos) ./
+                                                                     scale .+ mid_ref)
     return nodes, weights, D_phys, phys_to_ref
 end
 
@@ -101,21 +104,26 @@ struct MixedCellBasisConstructor{RealT, CellBasisT <: CellBasis{RealT},
     constructors::Constructors
     selector::Function
 
-    function MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(
-            constructors::Constructors, selector::Function) where {
-                RealT <: Real, CellBasisT <: CellBasis{RealT},
-                Constructors <: NamedTuple}
+    function MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(constructors::Constructors,
+                                                                        selector::Function) where {
+                                                                                                   RealT <:
+                                                                                                   Real,
+                                                                                                   CellBasisT <:
+                                                                                                   CellBasis{RealT},
+                                                                                                   Constructors <:
+                                                                                                   NamedTuple
+                                                                                                   }
         for name in keys(constructors)
             ctor = getfield(constructors, name)
             @assert ctor isa CellBasisConstructor{<:CellBasis{RealT}} ||
-                error("Constructor '$name' is $(typeof(ctor)), expected CellBasisConstructor{<:CellBasis{$RealT}}")
+                    error("Constructor '$name' is $(typeof(ctor)), expected CellBasisConstructor{<:CellBasis{$RealT}}")
         end
         new{RealT, CellBasisT, Constructors}(constructors, selector)
     end
 end
 
-function MixedCellBasisConstructor(constructors::Constructors, selector::Function) where {
-        Constructors <: NamedTuple}
+function MixedCellBasisConstructor(constructors::Constructors,
+                                   selector::Function) where {Constructors <: NamedTuple}
     CellBasisT = Union{map(ctor -> cell_basis_type(typeof(ctor)), Tuple(constructors))...}
     RealT = real(first(constructors))
     MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(constructors, selector)
@@ -141,6 +149,10 @@ end
 function TensorProductCellBasisConstructor(constructors::Tuple)
     RealT = real(first(constructors))
     basis_types = map(c -> cell_basis_type(typeof(c)), constructors)
+    # Varying the basis across elements needs a `MixedCellBasisConstructor` *of* tensor
+    # constructors, not a tensor product of mixed ones. #TODOFSBP: support that.
+    all(isconcretetype, basis_types) ||
+        error("tensor-product cell bases need one concrete basis type per axis")
     BasisT = TensorProductCellBasis{length(constructors), RealT, Tuple{basis_types...}}
     return TensorProductCellBasisConstructor{length(constructors), typeof(constructors),
                                              BasisT}(constructors)

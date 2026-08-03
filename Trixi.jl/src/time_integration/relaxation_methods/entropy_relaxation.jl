@@ -7,7 +7,8 @@
 
 @inline function integrate_w_dot_stage(stage, u_stage,
                                        mesh::Union{TreeMesh{1}, StructuredMesh{1}},
-                                       equations, dg::Union{DGSEM, FDSBP, DGFSBP}, cache)
+                                       equations, dg::Union{DGSEM, FDSBP, DGFSBP},
+                                       cache)
     @trixi_timeit timer() "Integrate w ⋅ k" begin
         # Calculate ∫(∂S/∂u ⋅ k)dΩ = ∫(w ⋅ k)dΩ
         integrate_via_indices(u_stage, mesh, equations, dg, cache,
@@ -25,7 +26,8 @@ end
                                        mesh::Union{TreeMesh{2}, StructuredMesh{2},
                                                    UnstructuredMesh2D, P4estMesh{2},
                                                    T8codeMesh{2}},
-                                       equations, dg::Union{DGSEM, FDSBP, DGFSBP}, cache)
+                                       equations, dg::Union{DGSEM, FDSBP, DGFSBP},
+                                       cache)
     @trixi_timeit timer() "Integrate w ⋅ k" begin
         # Calculate ∫(∂S/∂u ⋅ k)dΩ = ∫(w ⋅ k)dΩ
         integrate_via_indices(u_stage, mesh, equations, dg, cache,

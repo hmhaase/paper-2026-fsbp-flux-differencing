@@ -5,21 +5,7 @@
 @muladd begin
 #! format: noindent
 
-# Map a line of node values `(nvars, n)` along one axis to its boundary value at one side.
-@inline function boundary_value!(dest, line, basis::LobattoLikeCellBasis, ::Negative)
-    dest .= @view line[:, 1]
-end
-@inline function boundary_value!(dest, line, basis::LobattoLikeCellBasis, ::Positive)
-    dest .= @view line[:, end]
-end
-@inline function boundary_value!(dest, line, basis::GeneralSBPCellBasis, ::Negative)
-    mul!(dest, line, @view basis.boundary_interpolation[1, :])
-end
-@inline function boundary_value!(dest, line, basis::GeneralSBPCellBasis, ::Positive)
-    mul!(dest, line, @view basis.boundary_interpolation[2, :])
-end
-
-@inline function weak_form_kernel!(du, u, element, mesh::TreeMesh{2},
+@inline function weak_form_kernel!(du, u, element, ::Type{<:TreeMesh{2}},
                                    have_nonconservative_terms::False, equations,
                                    dg::DGFSBP, cache, alpha = true)
     bx, by = cache.elements.bases[element].bases
@@ -45,7 +31,7 @@ end
     return nothing
 end
 
-@inline function flux_differencing_kernel!(du, u, element, mesh::TreeMesh{2},
+@inline function flux_differencing_kernel!(du, u, element, ::Type{<:TreeMesh{2}},
                                            have_nonconservative_terms::False, equations,
                                            volume_flux, dg::DGFSBP, cache, alpha = true)
     bx, by = cache.elements.bases[element].bases
@@ -95,8 +81,8 @@ function prolong2interfaces!(backend::Nothing, cache, u, mesh::TreeMesh{2}, equa
         bx_l, by_l = bases[left].bases
         bx_r, by_r = bases[right].bases
 
-        # Conforming faces: neighbours share the same tangential nodes, so the left
-        # element's tangential basis indexes both sides here and in calc_interface_flux!.
+        # Faces are conforming (see `check_conforming_faces`): the left element's
+        # tangential basis indexes both sides.
         if orientations[interface] == 1
             # interface in x-direction: left +x face, right -x face; tangential index = y
             for j in eachnode(by_l)
@@ -133,7 +119,7 @@ function calc_interface_flux!(backend::Nothing, surface_flux_values, mesh::TreeM
         left_direction = 2 * orientations[interface]
         right_direction = 2 * orientations[interface] - 1
 
-        # tangential face-node count: y-count for an x-interface, x-count for a y-interface
+        # tangential node count
         bx_l, by_l = cache.elements.bases[left_id].bases
         n_face = orientations[interface] == 1 ? nnodes(by_l) : nnodes(bx_l)
         for i in 1:n_face
@@ -147,6 +133,13 @@ function calc_interface_flux!(backend::Nothing, surface_flux_values, mesh::TreeM
     end
 
     return nothing
+end
+
+function calc_interface_flux!(backend::Nothing, surface_flux_values, mesh::TreeMesh{2},
+                              have_nonconservative_terms::True, equations,
+                              surface_integral, dg::DGFSBP, cache)
+    #TODOFSBP: nonconservative terms in 2D
+    return error("nonconservative terms are not implemented for DGFSBP on TreeMesh{2}")
 end
 
 function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{2}, equations,
@@ -168,6 +161,7 @@ function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{2}, equa
                                     view(u_el, :, :, l), bx, Positive())
                 end
             else
+                # element in +x direction of boundary: extract its -x face
                 for l in eachnode(by)
                     boundary_value!(view(boundaries.u, 2, :, l, boundary),
                                     view(u_el, :, :, l), bx, Negative())
@@ -181,6 +175,7 @@ function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{2}, equa
                                     view(u_el, :, l, :), by, Positive())
                 end
             else
+                # element in +y direction of boundary: extract its -y face
                 for l in eachnode(bx)
                     boundary_value!(view(boundaries.u, 2, :, l, boundary),
                                     view(u_el, :, l, :), by, Negative())
@@ -201,36 +196,40 @@ function calc_boundary_flux!(backend::Nothing, cache, t,
     lasts = accumulate(+, n_boundaries_per_direction)
     firsts = lasts - n_boundaries_per_direction .+ 1
 
-    # Unrolled with literal indices (as in DGSEM) so heterogeneous boundary conditions
-    # stay type-stable.
+    # Unrolled with literal indices so heterogeneous boundary conditions stay type-stable.
     calc_boundary_flux_by_direction!(surface_flux_values, t, boundary_conditions[1],
                                      have_nonconservative_terms(equations), equations,
-                                     surface_integral, dg, cache, 1, firsts[1], lasts[1])
+                                     surface_integral, dg, cache, 1, firsts[1],
+                                     lasts[1])
     calc_boundary_flux_by_direction!(surface_flux_values, t, boundary_conditions[2],
                                      have_nonconservative_terms(equations), equations,
-                                     surface_integral, dg, cache, 2, firsts[2], lasts[2])
+                                     surface_integral, dg, cache, 2, firsts[2],
+                                     lasts[2])
     calc_boundary_flux_by_direction!(surface_flux_values, t, boundary_conditions[3],
                                      have_nonconservative_terms(equations), equations,
-                                     surface_integral, dg, cache, 3, firsts[3], lasts[3])
+                                     surface_integral, dg, cache, 3, firsts[3],
+                                     lasts[3])
     calc_boundary_flux_by_direction!(surface_flux_values, t, boundary_conditions[4],
                                      have_nonconservative_terms(equations), equations,
-                                     surface_integral, dg, cache, 4, firsts[4], lasts[4])
+                                     surface_integral, dg, cache, 4, firsts[4],
+                                     lasts[4])
 
     return nothing
 end
 
-function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:Any, 4}, t,
+function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:Any, 4},
+                                          t,
                                           boundary_condition,
                                           have_nonconservative_terms::False, equations,
                                           surface_integral, dg::DGFSBP, cache,
                                           direction, first_boundary, last_boundary)
     @unpack surface_flux = surface_integral
-    @unpack u, neighbor_ids, neighbor_sides, node_coordinates, orientations = cache.boundaries
+    @unpack u, neighbor_ids, neighbor_sides, node_coordinates,
+    orientations = cache.boundaries
 
     @threaded for boundary in first_boundary:last_boundary
         neighbor = neighbor_ids[boundary]
         bx, by = cache.elements.bases[neighbor].bases
-        # face-node count = tangential node count of the neighbor element
         n_face = orientations[boundary] == 1 ? nnodes(by) : nnodes(bx)
         for i in 1:n_face
             u_ll, u_rr = get_surface_node_vars(u, equations, dg, i, boundary)
@@ -248,28 +247,14 @@ function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:A
     return nothing
 end
 
-# Lift the two surface fluxes at a transverse position onto a normal-direction line
-# `(nvars, n)`. Explicit assignment lets `@muladd` form FMAs.
-@inline function apply_surface_lift_line!(du_line, sflux_neg, sflux_pos,
-                                          basis::LobattoLikeCellBasis, equations)
-    boundary_lift = basis.boundary_lift
-    n = nnodes(basis)
-    factor_neg = boundary_lift[1, 1]
-    factor_pos = boundary_lift[n, 2]
-    for v in eachvariable(equations)
-        du_line[v, 1] = du_line[v, 1] - sflux_neg[v] * factor_neg
-        du_line[v, n] = du_line[v, n] + sflux_pos[v] * factor_pos
-    end
-end
-@inline function apply_surface_lift_line!(du_line, sflux_neg, sflux_pos,
-                                          basis::GeneralSBPCellBasis, equations)
-    boundary_lift = basis.boundary_lift
-    for i in eachnode(basis)
-        for v in eachvariable(equations)
-            du_line[v, i] = (du_line[v, i] - sflux_neg[v] * boundary_lift[i, 1] +
-                             sflux_pos[v] * boundary_lift[i, 2])
-        end
-    end
+function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:Any, 4},
+                                          t,
+                                          boundary_condition,
+                                          have_nonconservative_terms::True, equations,
+                                          surface_integral, dg::DGFSBP, cache,
+                                          direction, first_boundary, last_boundary)
+    #TODOFSBP: nonconservative terms in 2D
+    return error("nonconservative terms are not implemented for DGFSBP on TreeMesh{2}")
 end
 
 function calc_surface_integral!(backend::Nothing, du, u, mesh::TreeMesh{2}, equations,
@@ -301,8 +286,9 @@ function calc_surface_integral!(backend::Nothing, du, u, mesh::TreeMesh{2}, equa
     return nothing
 end
 
-function apply_jacobian!(backend::Nothing, du, mesh::TreeMesh{2}, equations, dg::DGFSBP,
-                         cache)
+function apply_jacobian!(backend::Nothing, du::WrappedArray, mesh::TreeMesh{2},
+                         equations,
+                         dg::DGFSBP, cache)
     # FSBP absorbs the Jacobian into the weights; only the global minus sign remains.
     du.a .*= -one(eltype(du))
     return nothing

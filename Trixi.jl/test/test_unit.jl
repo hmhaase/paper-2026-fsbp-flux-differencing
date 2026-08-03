@@ -3884,7 +3884,10 @@ end
     end
 end
 
-@testitem "Unit: LobattoLikeCellBasis / LobattoLegendreCellBasis match LobattoLegendreBasis" setup=[Setup, UnitTests] tags=[:misc_part1] begin
+@testitem "Unit: LobattoLikeCellBasis / LobattoLegendreCellBasis match LobattoLegendreBasis" setup=[
+    Setup,
+    UnitTests
+] tags=[:misc_part1] begin
     RealT = Float64
 
     for polydeg in 1:5
@@ -3900,15 +3903,15 @@ end
         basis_like = Trixi.LobattoLikeCellBasis(dg_basis.nodes, dg_basis.weights,
                                                 dg_basis.derivative_matrix,
                                                 nodes_out -> Trixi.polynomial_interpolation_matrix(dg_basis.nodes,
-                                                                                                    nodes_out))
+                                                                                                   nodes_out))
 
         # DGSEM no longer stores a boundary-interpolation matrix for the Lobatto
         # basis (boundary evaluation collapses to a node lookup there); reconstruct
         # the same M^{-1}*L quantity via the still-available generic helpers.
         dg_basis_boundary_lift = hcat(Trixi.calc_Lhat(Trixi.calc_L(-one(RealT),
-                                                                    dg_basis.nodes,
-                                                                    dg_basis.weights),
-                                                       dg_basis.weights),
+                                                                   dg_basis.nodes,
+                                                                   dg_basis.weights),
+                                                      dg_basis.weights),
                                       Trixi.calc_Lhat(Trixi.calc_L(one(RealT),
                                                                    dg_basis.nodes,
                                                                    dg_basis.weights),
@@ -3936,92 +3939,92 @@ end
 
 @testitem "Unit: WrappedArray ragged indexing (isotropic)" setup=[Setup, UnitTests] tags=[:misc_part1] begin
     for nvars in (1, 3)
-    for NDIMS in 1:3
-        node_sizes = [2, 3, 1, 4]
-        n_elements = length(node_sizes)
-        num_nodes_in_element = [ntuple(_ -> n, NDIMS) for n in node_sizes]
+        for NDIMS in 1:3
+            node_sizes = [2, 3, 1, 4]
+            n_elements = length(node_sizes)
+            num_nodes_in_element = [ntuple(_ -> n, NDIMS) for n in node_sizes]
 
-        offsets = Vector{Int}(undef, n_elements + 1)
-        offsets[1] = 0
-        for element in 1:n_elements
-            offsets[element + 1] = offsets[element] +
-                                   nvars * prod(num_nodes_in_element[element])
-        end
-        total_length = offsets[end]
-
-        # `data[k] == k` by construction, so `wrapped[...] == expected` below checks
-        # against the flat position itself; `==` between Float64 and Int compares
-        # numerically, so comparing to plain Int positions is fine
-        data = collect(Float64, 1:total_length)
-        wrapped = Trixi.WrappedArray(Val(NDIMS), nvars, num_nodes_in_element, offsets,
-                                     data)
-
-        @test eltype(wrapped) === Float64
-
-        for element in 1:n_elements
-            view_ = wrapped[element]
-            @test size(view_) == (nvars, num_nodes_in_element[element]...)
-
-            # ellipsis shortcut agrees with the direct element view
-            @test wrapped[.., element] == view_
-
-            for idx in CartesianIndices(view_)
-                i_vars, i_dims... = Tuple(idx)
-                expected = offsets[element] + LinearIndices(size(view_))[idx]
-                @test view_[idx] == expected
-                @test wrapped[i_vars, i_dims..., element] == expected
+            offsets = Vector{Int}(undef, n_elements + 1)
+            offsets[1] = 0
+            for element in 1:n_elements
+                offsets[element + 1] = offsets[element] +
+                                       nvars * prod(num_nodes_in_element[element])
             end
+            total_length = offsets[end]
+
+            # `data[k] == k` by construction, so `wrapped[...] == expected` below checks
+            # against the flat position itself; `==` between Float64 and Int compares
+            # numerically, so comparing to plain Int positions is fine
+            data = collect(Float64, 1:total_length)
+            wrapped = Trixi.WrappedArray(Val(NDIMS), nvars, num_nodes_in_element, offsets,
+                                         data)
+
+            @test eltype(wrapped) === Float64
+
+            for element in 1:n_elements
+                view_ = wrapped[element]
+                @test size(view_) == (nvars, num_nodes_in_element[element]...)
+
+                # ellipsis shortcut agrees with the direct element view
+                @test wrapped[.., element] == view_
+
+                for idx in CartesianIndices(view_)
+                    i_vars, i_dims... = Tuple(idx)
+                    expected = offsets[element] + LinearIndices(size(view_))[idx]
+                    @test view_[idx] == expected
+                    @test wrapped[i_vars, i_dims..., element] == expected
+                end
+            end
+
+            # `setindex!` must be a true zero-copy alias into the same flat array,
+            # not a copy: writing through one path must be visible through the other
+            first_idx = ntuple(_ -> 1, NDIMS)
+            wrapped[1, first_idx..., 1] = -1.0
+            @test wrapped[1][1, first_idx...] == -1.0
+
+            last_idx = num_nodes_in_element[end]
+            view_last = wrapped[n_elements]
+            view_last[1, last_idx...] = -2.0
+            @test wrapped[1, last_idx..., n_elements] == -2.0
         end
-
-        # `setindex!` must be a true zero-copy alias into the same flat array,
-        # not a copy: writing through one path must be visible through the other
-        first_idx = ntuple(_ -> 1, NDIMS)
-        wrapped[1, first_idx..., 1] = -1.0
-        @test wrapped[1][1, first_idx...] == -1.0
-
-        last_idx = num_nodes_in_element[end]
-        view_last = wrapped[n_elements]
-        view_last[1, last_idx...] = -2.0
-        @test wrapped[1, last_idx..., n_elements] == -2.0
-    end
     end
 end
 
 @testitem "Unit: WrappedArray ragged indexing (anisotropic)" setup=[Setup, UnitTests] tags=[:misc_part1] begin
     for nvars in (1, 3)
-    for NDIMS in 2:3
-        num_nodes_in_element = NDIMS == 2 ? [(2, 3), (4, 1), (3, 3)] :
-                                            [(2, 3, 4), (1, 2, 3)]
-        n_elements = length(num_nodes_in_element)
+        for NDIMS in 2:3
+            num_nodes_in_element = NDIMS == 2 ? [(2, 3), (4, 1), (3, 3)] :
+                                   [(2, 3, 4), (1, 2, 3)]
+            n_elements = length(num_nodes_in_element)
 
-        offsets = Vector{Int}(undef, n_elements + 1)
-        offsets[1] = 0
-        for element in 1:n_elements
-            offsets[element + 1] = offsets[element] +
-                                   nvars * prod(num_nodes_in_element[element])
-        end
-        total_length = offsets[end]
+            offsets = Vector{Int}(undef, n_elements + 1)
+            offsets[1] = 0
+            for element in 1:n_elements
+                offsets[element + 1] = offsets[element] +
+                                       nvars * prod(num_nodes_in_element[element])
+            end
+            total_length = offsets[end]
 
-        # `data[k] == k` by construction, so `wrapped[...] == expected` below checks
-        # against the flat position itself; `==` between Float64 and Int compares
-        # numerically, so comparing to plain Int positions is fine
-        data = collect(Float64, 1:total_length)
-        wrapped = Trixi.WrappedArray(Val(NDIMS), nvars, num_nodes_in_element, offsets,
-                                     data)
+            # `data[k] == k` by construction, so `wrapped[...] == expected` below checks
+            # against the flat position itself; `==` between Float64 and Int compares
+            # numerically, so comparing to plain Int positions is fine
+            data = collect(Float64, 1:total_length)
+            wrapped = Trixi.WrappedArray(Val(NDIMS), nvars, num_nodes_in_element, offsets,
+                                         data)
 
-        for element in 1:n_elements
-            view_ = wrapped[element]
-            @test size(view_) == (nvars, num_nodes_in_element[element]...)
-            @test wrapped[.., element] == view_
+            for element in 1:n_elements
+                view_ = wrapped[element]
+                @test size(view_) == (nvars, num_nodes_in_element[element]...)
+                @test wrapped[.., element] == view_
 
-            for idx in CartesianIndices(view_)
-                i_vars, i_dims... = Tuple(idx)
-                expected = offsets[element] + LinearIndices(size(view_))[idx]
-                @test view_[idx] == expected
-                @test wrapped[i_vars, i_dims..., element] == expected
+                for idx in CartesianIndices(view_)
+                    i_vars, i_dims... = Tuple(idx)
+                    expected = offsets[element] + LinearIndices(size(view_))[idx]
+                    @test view_[idx] == expected
+                    @test wrapped[i_vars, i_dims..., element] == expected
+                end
             end
         end
-    end
     end
 end
 
@@ -4033,8 +4036,10 @@ end
     by = Trixi.LobattoLegendreCellBasis(2, 0.5, 3.0)
     tp = Trixi.TensorProductCellBasis((bx, by))
 
-    xs = Trixi.get_nodes(bx); wx = Trixi.quadrature_weights(bx)
-    ys = Trixi.get_nodes(by); wy = Trixi.quadrature_weights(by)
+    xs = Trixi.get_nodes(bx)
+    wx = Trixi.quadrature_weights(bx)
+    ys = Trixi.get_nodes(by)
+    wy = Trixi.quadrature_weights(by)
 
     # tensor quadrature over the cell, exact up to per-axis degree 2m-3 (5 in x, 3 in y)
     for (a, b) in ((0, 0), (5, 3), (4, 1))

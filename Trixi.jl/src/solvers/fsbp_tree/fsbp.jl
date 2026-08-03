@@ -6,6 +6,7 @@
 #! format: noindent
 
 include("containers.jl")
+include("containers_1d.jl")
 include("containers_2d.jl")
 include("fsbp_1d.jl")
 include("fsbp_2d.jl")

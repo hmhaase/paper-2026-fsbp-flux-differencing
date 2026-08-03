@@ -3,7 +3,7 @@ function calc_volume_integral!(backend::Nothing, du, u, mesh,
                                volume_integral::VolumeIntegralFluxDifferencing,
                                dg::DGFSBP, cache)
     @threaded for element in eachelement(dg, cache)
-        flux_differencing_kernel!(du, u, element, mesh,
+        flux_differencing_kernel!(du, u, element, typeof(mesh),
                                   have_nonconservative_terms, equations,
                                   volume_integral.volume_flux, dg, cache)
     end
@@ -16,7 +16,7 @@ function calc_volume_integral!(backend::Nothing, du, u, mesh,
                                volume_integral::VolumeIntegralWeakForm,
                                dg::DGFSBP, cache)
     @threaded for element in eachelement(dg, cache)
-        weak_form_kernel!(du, u, element, mesh,
+        weak_form_kernel!(du, u, element, typeof(mesh),
                           have_nonconservative_terms, equations,
                           dg, cache)
     end

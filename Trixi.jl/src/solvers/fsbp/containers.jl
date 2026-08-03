@@ -27,7 +27,7 @@ trixi_backend(::WrappedArray) = nothing
 
 @inline function convert_index(a::WrappedArray, (i_vars, i_dims..., element))
     LinearIndices((a.nvars, a.num_nodes_in_element[element]...))[i_vars, i_dims...] +
-        a.offsets[element]
+    a.offsets[element]
 end
 
 function Base.getindex(a::WrappedArray{NDIMS, T, A, WA},

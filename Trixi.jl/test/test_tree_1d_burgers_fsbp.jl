@@ -9,17 +9,17 @@ end
     using LinearAlgebra: norm
 
     trixi_include(@__MODULE__,
-        joinpath(EXAMPLES_DIR, "tree_1d_dgsem",
-            "elixir_burgers_linear_stability.jl"),
-        tspan=(0.0, 0.5))
+                  joinpath(EXAMPLES_DIR, "tree_1d_dgsem",
+                           "elixir_burgers_linear_stability.jl"),
+                  tspan = (0.0, 0.5))
 
     # get solution vector at 0.5
     u_dgsem = copy(sol.u[end])
 
     trixi_include(@__MODULE__,
-        joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
-            "elixir_burgers_linear_stability.jl"),
-        tspan=(0.0, 0.5))
+                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
+                           "elixir_burgers_linear_stability.jl"),
+                  tspan = (0.0, 0.5))
 
     # get solution vector at 0.5
     u_fsbp = copy(sol.u[end])
@@ -43,8 +43,8 @@ end
 
     polydeg = 3
     solver_lobatto_like = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> polydeg);
-                                  surface_flux = flux_lax_friedrichs,
-                                  volume_integral = VolumeIntegralWeakForm())
+                                 surface_flux = flux_lax_friedrichs,
+                                 volume_integral = VolumeIntegralWeakForm())
     trixi_include(@__MODULE__,
                   joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
                   tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_lobatto_like)
@@ -72,11 +72,16 @@ end
     nodes_ref, weights_ref = Trixi.gauss_lobatto_nodes_weights(polydeg + 1)
     D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
     calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
-    general_ctor = ReferenceCellBasisConstructor{Float64, Trixi.GeneralSBPCellBasis{Float64}}(
-        D_ref, nodes_ref, weights_ref, calc_interp, (-1.0, 1.0))
+    general_ctor = ReferenceCellBasisConstructor{Float64,
+                                                 Trixi.GeneralSBPCellBasis{Float64}}(D_ref,
+                                                                                     nodes_ref,
+                                                                                     weights_ref,
+                                                                                     calc_interp,
+                                                                                     (-1.0,
+                                                                                      1.0))
     solver_general = DGFSBP(general_ctor;
-                             surface_flux = flux_lax_friedrichs,
-                             volume_integral = VolumeIntegralWeakForm())
+                            surface_flux = flux_lax_friedrichs,
+                            volume_integral = VolumeIntegralWeakForm())
 
     trixi_include(@__MODULE__,
                   joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
@@ -84,8 +89,8 @@ end
     u_general_sbp = copy(sol.u[end])
 
     solver_lobatto_like = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> polydeg);
-                                  surface_flux = flux_lax_friedrichs,
-                                  volume_integral = VolumeIntegralWeakForm())
+                                 surface_flux = flux_lax_friedrichs,
+                                 volume_integral = VolumeIntegralWeakForm())
     trixi_include(@__MODULE__,
                   joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
                   tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_lobatto_like)
@@ -105,11 +110,16 @@ end
     nodes_ref, weights_ref = Trixi.gauss_nodes_weights(polydeg + 1)
     D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
     calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
-    general_ctor = ReferenceCellBasisConstructor{Float64, Trixi.GeneralSBPCellBasis{Float64}}(
-        D_ref, nodes_ref, weights_ref, calc_interp, (-1.0, 1.0))
+    general_ctor = ReferenceCellBasisConstructor{Float64,
+                                                 Trixi.GeneralSBPCellBasis{Float64}}(D_ref,
+                                                                                     nodes_ref,
+                                                                                     weights_ref,
+                                                                                     calc_interp,
+                                                                                     (-1.0,
+                                                                                      1.0))
     solver_general = DGFSBP(general_ctor;
-                             surface_flux = flux_lax_friedrichs,
-                             volume_integral = VolumeIntegralWeakForm())
+                            surface_flux = flux_lax_friedrichs,
+                            volume_integral = VolumeIntegralWeakForm())
 
     trixi_include(@__MODULE__,
                   joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
@@ -126,8 +136,8 @@ end
 ] tags=[:tree_part1] begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
                                  "elixir_burgers_mixed_basis.jl"),
-        l2 = [2.30231081502973e-5],
-        linf = [0.00012822591919103843])
+                        l2=[2.30231081502973e-5],
+                        linf=[0.00012822591919103843])
 
     # Verify the mesh actually mixed both basis families, not just one.
     elements = semi.cache.elements
@@ -142,10 +152,10 @@ end
     TreeMesh1DBurgersFSBP
 ] tags=[:tree_part1] begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
-        periodicity = false,
-        boundary_conditions = BoundaryConditionDirichlet(initial_condition_convergence_test),
-        l2 = [3.671547447293672e-5],
-        linf = [0.0001619006414712576])
+                        periodicity=false,
+                        boundary_conditions=BoundaryConditionDirichlet(initial_condition_convergence_test),
+                        l2=[3.671547447293672e-5],
+                        linf=[0.0001619006414712576])
 end
 
 @testitem "TreeMesh1D Burgers FSBP: elixir_burgers_basic.jl: error norms match DGSEM (analysis_polydeg=6)" setup=[
@@ -153,9 +163,9 @@ end
     TreeMesh1DBurgersFSBP
 ] tags=[:tree_part1] begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
-        analysis_polydeg = 6,
-        l2 = [2.967470209082194e-5],
-        linf = [0.00016152468882624227])
+                        analysis_polydeg=6,
+                        l2=[2.967470209082194e-5],
+                        linf=[0.00016152468882624227])
 
     # analysis_polydeg=6 matches DGSEM's own default (2 * polydeg); at that degree
     # the FSBP and DGSEM error norms should agree, not just this fixed reference.

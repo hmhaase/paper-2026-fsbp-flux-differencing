@@ -33,6 +33,15 @@ function integrate_via_indices(func::Func, u,
     return integral
 end
 
+"""
+    calc_error_norms(func, u, t, analyzer,
+                          mesh::TreeMesh{2}, equations, exact_solution,
+                          dg::DGFSBP, cache, cache_analysis)
+
+Calculate L2 and LInf error for func(u_exact) and func(u), where
+`u_exact(x, t) = exact_solution(x, t, equations)`.
+The L2 and LInf norms are approximated using some quadrature rule given by the analyzer.
+"""
 function calc_error_norms(func, u, t, analyzer,
                           mesh::TreeMesh{2}, equations, exact_solution,
                           dg::DGFSBP, cache, cache_analysis)

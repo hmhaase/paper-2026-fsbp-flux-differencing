@@ -9,14 +9,15 @@ initial_condition = initial_condition_weak_blast_wave
 
 volume_flux = flux_ranocha
 solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((x_center, dx) -> let
-                    if x_center < -0.3
-                        3
-                    elseif x_center < 0.3
-                        0
-                    else
-                        1
-                    end
-                end), surface_flux = flux_ranocha,
+                                                                 if x_center < -0.3
+                                                                     3
+                                                                 elseif x_center < 0.3
+                                                                     0
+                                                                 else
+                                                                     1
+                                                                 end
+                                                             end),
+                surface_flux = flux_ranocha,
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 
 coordinates_min = (-2.0,)
@@ -43,16 +44,11 @@ analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
-save_solution = SaveSolutionCallback(interval = 100,
-                                     save_initial_solution = true,
-                                     save_final_solution = true,
-                                     solution_variables = cons2prim)
-
 stepsize_callback = StepsizeCallback(cfl = 0.8)
 
+# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
 callbacks = CallbackSet(summary_callback,
                         analysis_callback, alive_callback,
-                        # save_solution,
                         stepsize_callback)
 
 ###############################################################################

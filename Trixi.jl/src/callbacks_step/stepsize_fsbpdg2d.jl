@@ -51,5 +51,4 @@ function max_dt(u, t, mesh::TreeMesh{2},
 
     return 1 / max_scaled_speed
 end
-
 end # @muladd

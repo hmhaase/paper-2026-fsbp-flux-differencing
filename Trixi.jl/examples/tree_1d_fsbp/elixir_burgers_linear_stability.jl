@@ -14,7 +14,7 @@ end
 
 volume_flux = flux_ec
 solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
-               surface_flux = flux_ec,
+                surface_flux = flux_ec,
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 
 coordinates_min = -1.0
@@ -39,7 +39,7 @@ analysis_interval = 100
 analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
                                      extra_analysis_errors = (:l2_error_primitive,
                                                               :linf_error_primitive),
-                                                              analysis_polydeg=6)
+                                     analysis_polydeg = 6)
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 

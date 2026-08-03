@@ -269,90 +269,90 @@ end
         @trixi_test_nowarn Plots.plot((x, equations) -> x, semi)
     end
 
-@timed_testset "PlotData1D for FSBP, uniform polynomial degree" begin
-    @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
-                                 "elixir_euler_ec.jl"),
-                        tspan=(0, 0.1))
+    @timed_testset "PlotData1D for FSBP, uniform polynomial degree" begin
+        @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
+                                     "elixir_euler_ec.jl"),
+                            tspan=(0, 0.1))
 
-    # Constructor (default: reinterpolate=true, nvisnodes=nothing -> 2*nnodes per element)
-    @test PlotData1D(sol) isa PlotData1D
-    pd = PlotData1D(sol)
-
-    # show
-    @trixi_test_nowarn show(stdout, pd)
-    println(stdout)
-
-    # getindex
-    @test pd["rho"] == Trixi.PlotDataSeries(pd, 1)
-    @test pd["v1"] == Trixi.PlotDataSeries(pd, 2)
-    @test pd["p"] == Trixi.PlotDataSeries(pd, 3)
-    @test_throws KeyError pd["does not exist"]
-
-    # getmesh/PlotMesh
-    @test getmesh(pd) == Trixi.PlotMesh(pd)
-    @test getmesh(pd).plot_data == pd
-    @trixi_test_nowarn show(stdout, getmesh(pd))
-    println(stdout)
-
-    # nvisnodes: 32 elements, polydeg=3 (4 nodes/element)
-    @test size(pd.data) == (256, 3)         # default: 2*4*32
-    pd0 = PlotData1D(sol, nvisnodes = 0)
-    @test size(pd0.data) == (128, 3)        # 4*32
-    pd2 = PlotData1D(sol, nvisnodes = 2)
-    @test size(pd2.data) == (64, 3)         # 2*32
-
-    # reinterpolate=false uses original GL nodes (same count as nvisnodes=0)
-    pd_raw = PlotData1D(sol, reinterpolate = false)
-    @test size(pd_raw.data) == (128, 3)
-
-    @testset "1D plot recipes" begin
+        # Constructor (default: reinterpolate=true, nvisnodes=nothing -> 2*nnodes per element)
+        @test PlotData1D(sol) isa PlotData1D
         pd = PlotData1D(sol)
-        @trixi_test_nowarn Plots.plot(sol)
-        @trixi_test_nowarn Plots.plot(sol, reinterpolate = false)
-        @trixi_test_nowarn Plots.plot(pd)
-        @trixi_test_nowarn Plots.plot(pd["rho"])
-        @trixi_test_nowarn Plots.plot(getmesh(pd))
-        initial_condition_t_end(x, equations) = initial_condition(x, last(tspan),
-                                                                  equations)
-        @trixi_test_nowarn Plots.plot(initial_condition_t_end, semi)
-        @trixi_test_nowarn Plots.plot((x, equations) -> x, semi)
+
+        # show
+        @trixi_test_nowarn show(stdout, pd)
+        println(stdout)
+
+        # getindex
+        @test pd["rho"] == Trixi.PlotDataSeries(pd, 1)
+        @test pd["v1"] == Trixi.PlotDataSeries(pd, 2)
+        @test pd["p"] == Trixi.PlotDataSeries(pd, 3)
+        @test_throws KeyError pd["does not exist"]
+
+        # getmesh/PlotMesh
+        @test getmesh(pd) == Trixi.PlotMesh(pd)
+        @test getmesh(pd).plot_data == pd
+        @trixi_test_nowarn show(stdout, getmesh(pd))
+        println(stdout)
+
+        # nvisnodes: 32 elements, polydeg=3 (4 nodes/element)
+        @test size(pd.data) == (256, 3)         # default: 2*4*32
+        pd0 = PlotData1D(sol, nvisnodes = 0)
+        @test size(pd0.data) == (128, 3)        # 4*32
+        pd2 = PlotData1D(sol, nvisnodes = 2)
+        @test size(pd2.data) == (64, 3)         # 2*32
+
+        # reinterpolate=false uses original GL nodes (same count as nvisnodes=0)
+        pd_raw = PlotData1D(sol, reinterpolate = false)
+        @test size(pd_raw.data) == (128, 3)
+
+        @testset "1D plot recipes" begin
+            pd = PlotData1D(sol)
+            @trixi_test_nowarn Plots.plot(sol)
+            @trixi_test_nowarn Plots.plot(sol, reinterpolate = false)
+            @trixi_test_nowarn Plots.plot(pd)
+            @trixi_test_nowarn Plots.plot(pd["rho"])
+            @trixi_test_nowarn Plots.plot(getmesh(pd))
+            initial_condition_t_end(x, equations) = initial_condition(x, last(tspan),
+                                                                      equations)
+            @trixi_test_nowarn Plots.plot(initial_condition_t_end, semi)
+            @trixi_test_nowarn Plots.plot((x, equations) -> x, semi)
+        end
     end
-end
 
-@timed_testset "PlotData1D for FSBP, variable polynomial degree" begin
-    @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
-                                 "elixir_euler_ec_variable_polynomial_degree.jl"),
-                        tspan=(0, 0.1))
+    @timed_testset "PlotData1D for FSBP, variable polynomial degree" begin
+        @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
+                                     "elixir_euler_ec_variable_polynomial_degree.jl"),
+                            tspan=(0, 0.1))
 
-    # Constructor (default: reinterpolate=true, nvisnodes=nothing)
-    @test PlotData1D(sol) isa PlotData1D
-    pd = PlotData1D(sol)
-
-    # 32 elements: 14x polydeg=3 (4 nodes), 4x polydeg=0 (1 node), 14x polydeg=1 (2 nodes)
-    # nvisnodes=nothing -> 2*nnodes per element: 14*8 + 4*2 + 14*4 = 176
-    # nvisnodes=0 -> max(nnodes,2) per element: polydeg=0 elements get 2 instead of 1
-    @test size(pd.data) == (176, 3)
-    pd0 = PlotData1D(sol, nvisnodes = 0)
-    @test size(pd0.data) == (92, 3)         # 14*4 + 4*max(1,2) + 14*2 = 92
-    pd2 = PlotData1D(sol, nvisnodes = 2)
-    @test size(pd2.data) == (64, 3)         # 2*32
-
-    pd_raw = PlotData1D(sol, reinterpolate = false)
-    @test size(pd_raw.data) == (88, 3)
-
-    @testset "1D plot recipes" begin
+        # Constructor (default: reinterpolate=true, nvisnodes=nothing)
+        @test PlotData1D(sol) isa PlotData1D
         pd = PlotData1D(sol)
-        @trixi_test_nowarn Plots.plot(sol)
-        @trixi_test_nowarn Plots.plot(sol, reinterpolate = false)
-        @trixi_test_nowarn Plots.plot(pd)
-        @trixi_test_nowarn Plots.plot(pd["rho"])
-        @trixi_test_nowarn Plots.plot(getmesh(pd))
-        initial_condition_t_end(x, equations) = initial_condition(x, last(tspan),
-                                                                  equations)
-        @trixi_test_nowarn Plots.plot(initial_condition_t_end, semi)
-        @trixi_test_nowarn Plots.plot((x, equations) -> x, semi)
+
+        # 32 elements: 14x polydeg=3 (4 nodes), 4x polydeg=0 (1 node), 14x polydeg=1 (2 nodes)
+        # nvisnodes=nothing -> 2*nnodes per element: 14*8 + 4*2 + 14*4 = 176
+        # nvisnodes=0 -> max(nnodes,2) per element: polydeg=0 elements get 2 instead of 1
+        @test size(pd.data) == (176, 3)
+        pd0 = PlotData1D(sol, nvisnodes = 0)
+        @test size(pd0.data) == (92, 3)         # 14*4 + 4*max(1,2) + 14*2 = 92
+        pd2 = PlotData1D(sol, nvisnodes = 2)
+        @test size(pd2.data) == (64, 3)         # 2*32
+
+        pd_raw = PlotData1D(sol, reinterpolate = false)
+        @test size(pd_raw.data) == (88, 3)
+
+        @testset "1D plot recipes" begin
+            pd = PlotData1D(sol)
+            @trixi_test_nowarn Plots.plot(sol)
+            @trixi_test_nowarn Plots.plot(sol, reinterpolate = false)
+            @trixi_test_nowarn Plots.plot(pd)
+            @trixi_test_nowarn Plots.plot(pd["rho"])
+            @trixi_test_nowarn Plots.plot(getmesh(pd))
+            initial_condition_t_end(x, equations) = initial_condition(x, last(tspan),
+                                                                      equations)
+            @trixi_test_nowarn Plots.plot(initial_condition_t_end, semi)
+            @trixi_test_nowarn Plots.plot((x, equations) -> x, semi)
+        end
     end
-end
 
     # Fake a PlotDataXD objects to test code for plotting multiple variables on at least two rows
     # with at least one plot remaining empty

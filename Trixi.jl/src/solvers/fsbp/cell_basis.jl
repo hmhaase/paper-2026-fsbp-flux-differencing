@@ -23,7 +23,7 @@ A 1D SBP operator (one node set + its matrices/boundary operators). In addition 
 - nnodes(::LineBasis)
 - quadrature_weights(::LineBasis)
 - interpolation_matrix(::LineBasis, nodes_out)
-- boundary_value!, boundary_coordinate
+- boundary_value!, apply_surface_lift_line!, boundary_coordinate
 
 Fields:
 - boundary_lift    # M⁻¹Rᵀ, [nnodes, 2] (Lobatto: R = [e_1, e_N]ᵀ)
@@ -85,6 +85,26 @@ end
 
 @inline boundary_coordinate(basis::LobattoLikeCellBasis, ::Negative) = basis._nodes[1]
 @inline boundary_coordinate(basis::LobattoLikeCellBasis, ::Positive) = basis._nodes[end]
+
+@inline function boundary_value!(dest, u_line, ::LobattoLikeCellBasis, ::Negative)
+    dest .= @view u_line[:, 1]
+end
+@inline function boundary_value!(dest, u_line, ::LobattoLikeCellBasis, ::Positive)
+    dest .= @view u_line[:, end]
+end
+
+# `boundary_lift` is nonzero only at the two endpoint nodes for Lobatto-like bases.
+@inline function apply_surface_lift_line!(du_line, sflux_neg, sflux_pos,
+                                          basis::LobattoLikeCellBasis, equations)
+    boundary_lift = basis.boundary_lift
+    n = nnodes(basis)
+    factor_neg = boundary_lift[1, 1]
+    factor_pos = boundary_lift[n, 2]
+    for v in eachvariable(equations)
+        du_line[v, 1] = du_line[v, 1] - sflux_neg[v] * factor_neg
+        du_line[v, n] = du_line[v, n] + sflux_pos[v] * factor_pos
+    end
+end
 
 function LobattoLikeCellBasis(nodes, weights, derivative_matrix, calc_interpolation_matrix)
     RealT = eltype(nodes)
@@ -183,8 +203,28 @@ end
 
 @inline Base.real(::GeneralSBPCellBasis{RealT}) where {RealT <: Real} = RealT
 
-@inline boundary_coordinate(basis::GeneralSBPCellBasis, ::Negative) = basis.boundary_nodes[1]
-@inline boundary_coordinate(basis::GeneralSBPCellBasis, ::Positive) = basis.boundary_nodes[2]
+@inline boundary_coordinate(basis::GeneralSBPCellBasis,
+::Negative) = basis.boundary_nodes[1]
+@inline boundary_coordinate(basis::GeneralSBPCellBasis,
+::Positive) = basis.boundary_nodes[2]
+
+@inline function boundary_value!(dest, u_line, basis::GeneralSBPCellBasis, ::Negative)
+    mul!(dest, u_line, @view basis.boundary_interpolation[1, :])
+end
+@inline function boundary_value!(dest, u_line, basis::GeneralSBPCellBasis, ::Positive)
+    mul!(dest, u_line, @view basis.boundary_interpolation[2, :])
+end
+
+@inline function apply_surface_lift_line!(du_line, sflux_neg, sflux_pos,
+                                          basis::GeneralSBPCellBasis, equations)
+    boundary_lift = basis.boundary_lift
+    for i in eachnode(basis)
+        for v in eachvariable(equations)
+            du_line[v, i] = (du_line[v, i] - sflux_neg[v] * boundary_lift[i, 1] +
+                             sflux_pos[v] * boundary_lift[i, 2])
+        end
+    end
+end
 
 function GeneralSBPCellBasis(nodes, boundary_nodes, weights, D, calc_interpolation_matrix)
     RealT = eltype(nodes)

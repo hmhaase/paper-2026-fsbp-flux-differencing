@@ -16,7 +16,7 @@ D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
 calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
 
 constructors = (lobatto = LobattoLegendreCellBasisConstructor{Float64}((args...) -> polydeg),
-               general = ReferenceCellBasisConstructor{Float64,
+                general = ReferenceCellBasisConstructor{Float64,
                                                         Trixi.GeneralSBPCellBasis{Float64}}(D_ref,
                                                                                             nodes_ref,
                                                                                             weights_ref,
@@ -27,8 +27,8 @@ selector = (ctors, pos, dx) -> pos < 0.5 ? ctors.lobatto : ctors.general
 constructor = MixedCellBasisConstructor(constructors, selector)
 
 solver = DGFSBP(constructor,
-               surface_flux = flux_lax_friedrichs,
-               volume_integral = VolumeIntegralWeakForm())
+                surface_flux = flux_lax_friedrichs,
+                volume_integral = VolumeIntegralWeakForm())
 
 coordinates_min = 0.0
 coordinates_max = 1.0
@@ -57,17 +57,11 @@ analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
-save_solution = SaveSolutionCallback(interval = 100,
-                                     save_initial_solution = true,
-                                     save_final_solution = true,
-                                     solution_variables = cons2prim)
-
 stepsize_callback = StepsizeCallback(cfl = 0.8)
 
+# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
 callbacks = CallbackSet(summary_callback,
                         analysis_callback, alive_callback,
-                        #TODOFSBP
-                        #save_solution,
                         stepsize_callback)
 
 ###############################################################################

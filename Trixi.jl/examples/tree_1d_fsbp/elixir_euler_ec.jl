@@ -36,16 +36,11 @@ analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
-save_solution = SaveSolutionCallback(interval = 100,
-                                     save_initial_solution = true,
-                                     save_final_solution = true,
-                                     solution_variables = cons2prim)
-
 stepsize_callback = StepsizeCallback(cfl = 0.8)
 
+# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
 callbacks = CallbackSet(summary_callback,
                         analysis_callback, alive_callback,
-                        # save_solution,
                         stepsize_callback)
 
 ###############################################################################

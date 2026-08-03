@@ -34,6 +34,7 @@ abstract type AbstractTreeInterfaceContainer <: AbstractInterfaceContainer end
 
 # Return number of interfaces
 @inline ninterfaces(interfaces::AbstractTreeInterfaceContainer) = length(interfaces.orientations)
+@inline eachinterface(interfaces::AbstractTreeInterfaceContainer) = Base.OneTo(ninterfaces(interfaces))
 # Return number of interface nodes for 2D and 3D. For 1D hard-coded to 1 interface node.
 @inline nnodes(interfaces::AbstractTreeInterfaceContainer) = size(interfaces.u, 3)
 # Return number of equation variables

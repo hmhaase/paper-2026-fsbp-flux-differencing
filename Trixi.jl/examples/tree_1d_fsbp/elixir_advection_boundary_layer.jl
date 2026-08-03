@@ -21,8 +21,7 @@ end
 initial_condition = initial_condition_boundary_layer
 
 # Source term s(u) = 2u
-source_terms_2u(u, x, t, equations::LinearScalarAdvectionEquation1D) =
-    SVector(2 * u[1])
+source_terms_2u(u, x, t, equations::LinearScalarAdvectionEquation1D) = SVector(2 * u[1])
 
 boundary_condition_inflow = BoundaryConditionDirichlet(initial_condition_boundary_layer)
 
@@ -39,8 +38,12 @@ polydeg = 2
 nodes_ref, weights_ref = Trixi.gauss_nodes_weights(polydeg + 1)
 D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
 calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
-constructor = ReferenceCellBasisConstructor{Float64, Trixi.GeneralSBPCellBasis{Float64}}(
-    D_ref, nodes_ref, weights_ref, calc_interp, (-1.0, 1.0))
+constructor = ReferenceCellBasisConstructor{Float64, Trixi.GeneralSBPCellBasis{Float64}}(D_ref,
+                                                                                         nodes_ref,
+                                                                                         weights_ref,
+                                                                                         calc_interp,
+                                                                                         (-1.0,
+                                                                                          1.0))
 
 volume_integral = VolumeIntegralWeakForm()
 solver = DGFSBP(constructor,
@@ -73,17 +76,11 @@ analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
-save_solution = SaveSolutionCallback(interval = 100,
-                                     save_initial_solution = true,
-                                     save_final_solution = true,
-                                     solution_variables = cons2prim)
-
 stepsize_callback = StepsizeCallback(cfl = 0.8)
 
+# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
 callbacks = CallbackSet(summary_callback,
                         analysis_callback, alive_callback,
-                        #TODOFSBP
-                        #save_solution,
                         stepsize_callback)
 
 ###############################################################################

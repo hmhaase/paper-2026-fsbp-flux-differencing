@@ -5,165 +5,69 @@
 @muladd begin
 #! format: noindent
 
-struct TreeElementBasisContainer1D{RealT <: Real,
-                                   uEltype <: Real,
-                                   CellBasisT} <:
-       AbstractTreeElementContainer
-    bases::Vector{CellBasisT}      # [elements]
+# `NDIMSP2` is `NDIMS + 2`, the rank of `surface_flux_values`; Julia cannot compute it
+# inside the type, so it is carried as a parameter (as in `P4estElementContainer`).
+struct TreeElementBasisContainer{NDIMS, RealT <: Real, uEltype <: Real, CellBasisT,
+                                 NDIMSP2} <: AbstractTreeElementContainer
+    bases::Vector{CellBasisT}                         # [elements]
     nvars::Int
-    num_nodes_in_element::Vector{NTuple{1, Int}} # 1D, so always a 1-tuple; matches WrappedArray's per-dimension representation
-    offsets::Vector{Int} # 0, nvars*nnodes(bases[1]), nvars*nnodes(bases[1]) + nvars*nnodes(bases[2]), ..., nvars*nnodes(bases[1]) + ... + nvars*nnodes(bases[n])
-    surface_flux_values::Array{uEltype, 3} # [variables, direction, elements]
-    cell_ids::Vector{Int}                  # [elements]
-    # internal `resize!`able storage
-    _surface_flux_values::Vector{uEltype}
+    num_nodes_in_element::Vector{NTuple{NDIMS, Int}}  # per axis, per element
+    offsets::Vector{Int}                              # start of each element in the flat vector
+    surface_flux_values::Array{uEltype, NDIMSP2}      # [variables, face node..., direction, elements]
+    cell_ids::Vector{Int}                             # [elements]
+    _surface_flux_values::Vector{uEltype}             # internal `resize!`able storage
 end
 
-function TreeElementBasisContainer1D{RealT, uEltype, CellBasisT}(capacity::Integer,
-                                                                 n_variables) where {
-                                                                                     RealT <:
-                                                                                     Real,
-                                                                                     uEltype <:
-                                                                                     Real,
-                                                                                     CellBasisT
-                                                                                     }
-    nan_uEltype = convert(uEltype, NaN)
+const TreeElementBasisContainer1D = TreeElementBasisContainer{1}
+const TreeElementBasisContainer2D = TreeElementBasisContainer{2}
 
-    bases = Vector{CellBasisT}(undef, capacity)
-    num_nodes_in_element = Vector{NTuple{1, Int}}(undef, capacity)
-    offsets = Vector{Int}(undef, capacity + 1)
+# `n_face_nodes` (max node count over all elements/axes) sizes the face dimensions of
+# `surface_flux_values`; in 1D there are none and it is ignored.
+function TreeElementBasisContainer{NDIMS, RealT, uEltype, CellBasisT}(bases, nvars,
+                                                                      num_nodes_in_element,
+                                                                      offsets, cell_ids,
+                                                                      n_face_nodes) where {
+                                                                                           NDIMS,
+                                                                                           RealT <:
+                                                                                           Real,
+                                                                                           uEltype <:
+                                                                                           Real,
+                                                                                           CellBasisT
+                                                                                           }
+    capacity = length(bases)
+    dims = (nvars, ntuple(_ -> n_face_nodes, Val(NDIMS - 1))..., 2 * NDIMS, capacity)
 
-    _surface_flux_values = fill(nan_uEltype, n_variables * 2 * 1 * capacity)
-    surface_flux_values = unsafe_wrap(Array, pointer(_surface_flux_values),
-                                      (n_variables, 2 * 1, capacity))
+    _surface_flux_values = fill(convert(uEltype, NaN), prod(dims))
+    surface_flux_values = unsafe_wrap(Array, pointer(_surface_flux_values), dims)
 
-    cell_ids = fill(typemin(Int), capacity)
-
-    return TreeElementBasisContainer1D{RealT, uEltype, CellBasisT}(bases,
-                                                                   n_variables,
-                                                                   num_nodes_in_element,
-                                                                   offsets,
-                                                                   surface_flux_values,
-                                                                   cell_ids,
-                                                                   _surface_flux_values)
+    return TreeElementBasisContainer{NDIMS, RealT, uEltype, CellBasisT, NDIMS + 2}(bases,
+                                                                                   nvars,
+                                                                                   num_nodes_in_element,
+                                                                                   offsets,
+                                                                                   surface_flux_values,
+                                                                                   collect(Int,
+                                                                                           cell_ids),
+                                                                                   _surface_flux_values)
 end
 
-@inline Base.real(::TreeElementBasisContainer1D{RealT, uEltype, CellBasisT}) where {
-RealT <: Real,
-uEltype <: Real,
-CellBasisT
-} = RealT
+@inline Base.real(::TreeElementBasisContainer{NDIMS, RealT}) where {NDIMS,
+RealT} = RealT
 
-@inline function nelements(elements::TreeElementBasisContainer1D)
-    length(elements.bases)
-end
-
-@inline eachnode(::DGFSBP, elements::TreeElementBasisContainer1D, element) = Base.OneTo(elements.num_nodes_in_element[element][1])
-@inline nnodes(::DGFSBP, elements::TreeElementBasisContainer1D, element) = elements.num_nodes_in_element[element][1]
-@inline nnodes(elements::TreeElementBasisContainer1D, element) = elements.num_nodes_in_element[element][1]
+@inline nelements(elements::TreeElementBasisContainer) = length(elements.bases)
 
 """
-    eachelement(elements::TreeElementBasisContainer1D)
+    eachelement(elements::TreeElementBasisContainer)
 
 Return an iterator over the indices that specify the location in relevant data structures
 for the elements in `elements`.
 In particular, not the elements themselves are returned.
 """
-@inline function eachelement(elements::TreeElementBasisContainer1D)
+@inline function eachelement(elements::TreeElementBasisContainer)
     Base.OneTo(nelements(elements))
 end
 
-num_total_nodes(elements::TreeElementBasisContainer1D) = elements.offsets[end] ÷
-                                                         elements.nvars
-
-# Create element container and initialize element data
-function init_elements(cell_ids, mesh::TreeMesh1D,
-                       equations::AbstractEquations{1},
-                       basis::PerCellBasis{CellBasisConstructorT},
-                       ::Type{RealT},
-                       ::Type{uEltype}) where
-         {
-          RealT <: Real,
-          uEltype <: Real,
-          CellBasisT <: CellBasis{RealT},
-          CellBasisConstructorT <: CellBasisConstructor{CellBasisT}
-          }
-    # Initialize container
-    n_elements = length(cell_ids)
-    elements = TreeElementBasisContainer1D{RealT, uEltype, CellBasisT}(n_elements,
-                                                                       nvariables(equations))
-
-    init_elements!(elements, cell_ids, mesh, basis)
-    return elements
-end
-
-function init_elements!(elements, cell_ids, mesh::TreeMesh1D, basis::PerCellBasis)
-    # Store cell ids
-    elements.cell_ids .= cell_ids
-    elements.offsets[begin] = 0
-
-    n_vars = nvariables(elements)
-
-    for element in eachelement(elements)
-        # Get cell id
-        cell_id = cell_ids[element]
-
-        # Get cell length
-        dx = length_at_cell(mesh.tree, cell_id)
-
-        cell_basis = build_cell_basis(basis.local_basis_constructor,
-                                      mesh.tree.coordinates[1, cell_id], dx)
-        elements.bases[element] = cell_basis
-        elements.offsets[element + 1] = elements.offsets[element] +
-                                        n_vars * ndofs_per_element(cell_basis)
-        elements.num_nodes_in_element[element] = (nnodes(cell_basis),)
-    end
-
-    return elements
-end
-
-function init_interfaces(cell_ids, mesh::TreeMesh1D,
-                         elements::TreeElementBasisContainer1D)
-    # Initialize container
-    n_interfaces = count_required_interfaces(mesh, cell_ids)
-    interfaces = TreeInterfaceContainer1D{eltype(elements)}(n_interfaces,
-                                                            nvariables(elements))
-
-    # Connect elements with interfaces
-    init_interfaces!(interfaces, elements, mesh)
-    return interfaces
-end
-
-# Create boundaries container and initialize boundary data in `elements`.
-function init_boundaries(cell_ids, mesh::TreeMesh1D,
-                         elements::TreeElementBasisContainer1D, basis)
-    # Initialize container
-    n_boundaries = count_required_boundaries(mesh, cell_ids)
-    boundaries = TreeBoundaryContainer1D{real(elements), eltype(elements)}(n_boundaries,
-                                                                           nvariables(elements))
-
-    # Connect elements with boundaries
-    init_boundaries!(boundaries, elements, mesh, basis)
-    return boundaries
-end
-
-@inline function boundary_node_coordinate(elements::TreeElementBasisContainer1D, element,
-                                           direction)
-    basis = elements.bases[element]
-    if direction == 1
-        return SVector(boundary_coordinate(basis, Negative()))
-    else
-        return SVector(boundary_coordinate(basis, Positive()))
-    end
-end
-
-function calc_boundary_node_coordinates!(boundaries, element, count, direction,
-                                         elements::TreeElementBasisContainer1D,
-                                         mesh::TreeMesh1D, basis)
-    boundaries.node_coordinates[:, count] .= boundary_node_coordinate(elements, element,
-                                                                       direction)
-    return nothing
-end
+num_total_nodes(elements::TreeElementBasisContainer) = elements.offsets[end] ÷
+                                                       elements.nvars
 
 function wrap_array(u_ode::AbstractVector, mesh::AbstractMesh, equations,
                     dg::DGFSBP, cache)
@@ -176,17 +80,16 @@ function allocate_coefficients(::AbstractMesh, equations, ::DGFSBP, cache)
     # We must allocate a `Vector` in order to be able to `resize!` it (AMR).
     # cf. wrap_array
     u_ode = fill(zero(eltype(cache.elements)),
-                nvariables(equations) * num_total_nodes(cache.elements))
+                 nvariables(equations) * num_total_nodes(cache.elements))
     return u_ode
 end
 
-@inline function get_node_coords(elements::TreeElementBasisContainer1D, i, element)
-    SVector(get_nodes(elements.bases[element])[i])
-end
-
-@inline function get_node_coords(elements::TreeElementBasisContainer1D, equations,
-                                 solver::DG, indices...)
-    get_node_coords(elements, indices...)
+# The generic `set_zero!` calls `du[.., element]`, which allocates a view per element.
+# Directly zeroing the flat backing vector avoids all allocations.
+# `trixi_backend(::WrappedArray)` is always `nothing`, so this covers every case.
+function set_zero!(::Nothing, du::WrappedArray, dg::DGFSBP, cache)
+    fill!(du.a, zero(eltype(du)))
+    return nothing
 end
 
 @inline nelements(mesh, dg::DGFSBP, cache) = nelements(cache.elements)

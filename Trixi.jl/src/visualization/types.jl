@@ -226,10 +226,12 @@ end
 
 # FSBP has no uniform node count, so wrap ragged (`wrap_array`), not `wrap_array_native`.
 function PlotData2D(u_ode::AbstractVector,
-                    semi::SemidiscretizationHyperbolic{Mesh, Equations, InitialCondition,
+                    semi::SemidiscretizationHyperbolic{Mesh, Equations,
+                                                       InitialCondition,
                                                        BoundaryConditions, SourceTerms,
                                                        Solver, Cache};
-                    kwargs...) where {Solver <: DGFSBP, Mesh, Equations, InitialCondition,
+                    kwargs...) where {Solver <: DGFSBP, Mesh, Equations,
+                                      InitialCondition,
                                       BoundaryConditions, SourceTerms, Cache}
     return PlotData2D(wrap_array(u_ode, semi),
                       mesh_equations_solver_cache(semi)...;
@@ -294,7 +296,8 @@ function PlotData2DCartesian(u, mesh::TreeMesh, equations, solver, cache;
                                                                coordinates, levels,
                                                                ndims(mesh),
                                                                unstructured_data,
-                                                               size(unstructured_data, 1),
+                                                               size(unstructured_data,
+                                                                    1),
                                                                grid_lines,
                                                                max_supported_level,
                                                                nvisnodes,
@@ -752,18 +755,20 @@ function PlotData1D(u, mesh::TreeMesh1D, equations, solver::BlockFV, cache;
 end
 
 # unwrap u if it is VectorOfArray
-PlotData1D(u::VectorOfArray, mesh, equations, dg::DGMulti{1}, cache; kwargs...) = PlotData1D(parent(u),
-                                                                                             mesh,
-                                                                                             equations,
-                                                                                             dg,
-                                                                                             cache;
-                                                                                             kwargs...)
-PlotData2D(u::VectorOfArray, mesh, equations, dg::DGMulti{2}, cache; kwargs...) = PlotData2D(parent(u),
-                                                                                             mesh,
-                                                                                             equations,
-                                                                                             dg,
-                                                                                             cache;
-                                                                                             kwargs...)
+PlotData1D(u::VectorOfArray, mesh, equations, dg::DGMulti{1}, cache;
+kwargs...) = PlotData1D(parent(u),
+                        mesh,
+                        equations,
+                        dg,
+                        cache;
+                        kwargs...)
+PlotData2D(u::VectorOfArray, mesh, equations, dg::DGMulti{2}, cache;
+kwargs...) = PlotData2D(parent(u),
+                        mesh,
+                        equations,
+                        dg,
+                        cache;
+                        kwargs...)
 
 function PlotData1D(u, mesh, equations, solver, cache;
                     solution_variables = nothing, nvisnodes = nothing,
@@ -927,7 +932,8 @@ function PlotData1D(u::WrappedArray, mesh::TreeMesh, equations, solver::DGFSBP, 
 
     if ndims(mesh) == 1
         x, data, mesh_vertices_x = get_data_1d(u, mesh.tree, cache.elements, nvisnodes,
-                                               reinterpolate, solution_variables_, equations)
+                                               reinterpolate, solution_variables_,
+                                               equations)
         orientation_x = 1
 
     else
@@ -938,8 +944,7 @@ function PlotData1D(u::WrappedArray, mesh::TreeMesh, equations, solver::DGFSBP, 
                       orientation_x)
 end
 
-# Plot `func(x, equations)` over a `DGFSBP` mesh by evaluating it at every (ragged) per-cell
-# node into a `WrappedArray`, then reusing the solution-data `PlotData1D(u::WrappedArray, ...)`.
+# Evaluate `func` at every node into a ragged `WrappedArray`, then reuse the solution-data method.
 function PlotData1D(func::Function, mesh::TreeMesh, equations, solver::DGFSBP, cache;
                     kwargs...)
     elements = cache.elements
@@ -948,7 +953,7 @@ function PlotData1D(func::Function, mesh::TreeMesh, equations, solver::DGFSBP, c
     node_vars_1 = func(get_node_coords(elements, 1, 1), equations)
     n_vars = length(node_vars_1)
 
-    # Recompute offsets: the cache's assume `nvariables(equations)` components, not `n_vars`.
+    # Recompute offsets: the cache's offsets assume `nvariables(equations)` components, not `n_vars`.
     num_nodes_in_element = elements.num_nodes_in_element
     offsets = Vector{Int}(undef, nelements(elements) + 1)
     offsets[1] = 0

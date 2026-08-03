@@ -399,7 +399,8 @@ function prolong2interfaces!(cache, u_or_flux_parabolic,
         # interface in x-direction
         for v in eachvariable(equations)
             interfaces_u[1, v, interface] = u_or_flux_parabolic[v,
-                                                                nnodes(dg, cache.elements,
+                                                                nnodes(dg,
+                                                                       cache.elements,
                                                                        left_element),
                                                                 left_element]
             interfaces_u[2, v, interface] = u_or_flux_parabolic[v, 1, right_element]
