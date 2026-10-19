@@ -50,15 +50,11 @@ Basis including boundary nodes with quadrature_weights similar to a Gauss-Lobatt
 struct LobattoLikeCellBasis{RealT <: Real} <: LineBasis{RealT}
     _nodes::Vector{RealT}
     _weights::Vector{RealT}
-    # _inverse_weights::Vector{RealT}
 
-    # _inverse_vandermonde_legendre::Matrix{RealT}
     "Matrix L such that \$L^T M u = [u_L, u_R]^T\$, that is \$L = M⁻¹ [e_1, e_N]\$"
     boundary_lift::Matrix{RealT} # lhat
 
-    # _derivative_matrix::Matrix{RealT} # strong form derivative matrix
     derivative_split::Matrix{RealT} # 2D - M⁻¹B, skew-symmetric split form
-    # _derivative_split_transpose::Matrix{RealT} # transpose of `derivative_split`
     derivative_dhat::Matrix{RealT} # weak form matrix "dhat"
 
     """
@@ -149,9 +145,6 @@ function LobattoLegendreCellBasis(polydeg::Int, pos::RealT,
     J = dx / 2
     nodes = J .* nodes .+ pos
     weights = abs(J) .* weights
-    # inverse_weights = inv.(weights)
-
-    # _, inverse_vandermonde_legendre = vandermonde_legendre(nodes, RealT)
 
     boundary_lift = zeros(RealT, nnodes_, 2)
     boundary_lift[:, 1] = calc_Lhat(calc_L(J * -one(RealT) + pos, nodes, weights),
@@ -161,20 +154,12 @@ function LobattoLegendreCellBasis(polydeg::Int, pos::RealT,
 
     derivative_matrix = polynomial_derivative_matrix(nodes)
     derivative_split = calc_Dsplit(derivative_matrix, weights)
-    # derivative_split_transpose = Matrix(derivative_split')
     derivative_dhat = calc_Dhat(derivative_matrix, weights)
 
     calc_interp = nodes_out -> polynomial_interpolation_matrix(nodes, nodes_out)
 
-    LobattoLikeCellBasis{RealT}(nodes, weights,
-                                # inverse_weights,
-                                # inverse_vandermonde_legendre,
-                                boundary_lift,
-                                # derivative_matrix,
-                                derivative_split,
-                                # derivative_split_transpose,
-                                derivative_dhat,
-                                calc_interp)
+    LobattoLikeCellBasis{RealT}(nodes, weights, boundary_lift, derivative_split,
+                                derivative_dhat, calc_interp)
 end
 
 """

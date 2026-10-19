@@ -44,7 +44,7 @@ function init_elements(cell_ids, mesh::TreeMesh2D,
 end
 
 # Both sides of an interface are indexed with the left element's tangential basis.
-#TODOFSBP: lift by interpolating between the two tangential bases.
+# TODO: lift by interpolating between the two tangential bases.
 function check_conforming_faces(interfaces, elements)
     for interface in eachinterface(interfaces)
         left_element = interfaces.neighbor_ids[1, interface]

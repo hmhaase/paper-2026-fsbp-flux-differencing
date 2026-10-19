@@ -160,7 +160,7 @@ function TensorProductCellBasisConstructor(constructors::Tuple)
     RealT = real(first(constructors))
     basis_types = map(c -> cell_basis_type(typeof(c)), constructors)
     # Varying the basis across elements needs a `MixedCellBasisConstructor` *of* tensor
-    # constructors, not a tensor product of mixed ones. #TODOFSBP: support that.
+    # constructors, not a tensor product of mixed ones. TODO: support that.
     all(isconcretetype, basis_types) ||
         error("tensor-product cell bases need one concrete basis type per axis")
     BasisT = TensorProductCellBasis{length(constructors), RealT, Tuple{basis_types...}}

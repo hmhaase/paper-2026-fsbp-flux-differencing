@@ -13,11 +13,11 @@ include("cell_basis.jl")
 include("cell_basis_constructors.jl")
 
 """
-    PerCellBasis{CellBasisT}
+    PerCellBasis{CellBasisConstructorT}
 
-Each cell of the mesh has its own CellBasis.
-Marker type that holds no data itself.
-Everything is delegated to bases for individual cells/elements.
+Each cell of the mesh has its own CellBasis. Holds only the `local_basis_constructor`
+that builds the basis of each cell; everything else is delegated to the bases of the
+individual cells/elements.
 """
 struct PerCellBasis{CellBasisConstructorT} <:
        FSBPBasis
@@ -61,7 +61,7 @@ end
 SolutionAnalyzer for spatially varying bases.
 
 - analysis_polydeg == nothing => no interpolation, compares numerical solution to exact solution at basis nodes
-- analysis_polydeg == n::Int => projects exact and numerical solution to polynomial space with degree n and compares these projections
+- analysis_polydeg == n::Int => evaluates the exact solution and interpolates the numerical solution at n + 1 Gauss-Lobatto nodes per element and compares them there
 """
 function SolutionAnalyzer(basis::PerCellBasis; analysis_polydeg = nothing)
     RealT = real(basis)

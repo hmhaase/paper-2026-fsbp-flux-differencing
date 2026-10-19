@@ -138,7 +138,7 @@ end
 function calc_interface_flux!(backend::Nothing, surface_flux_values, mesh::TreeMesh{2},
                               have_nonconservative_terms::True, equations,
                               surface_integral, dg::DGFSBP, cache)
-    #TODOFSBP: nonconservative terms in 2D
+    # TODO: nonconservative terms in 2D
     return error("nonconservative terms are not implemented for DGFSBP on TreeMesh{2}")
 end
 
@@ -253,7 +253,7 @@ function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:A
                                           have_nonconservative_terms::True, equations,
                                           surface_integral, dg::DGFSBP, cache,
                                           direction, first_boundary, last_boundary)
-    #TODOFSBP: nonconservative terms in 2D
+    # TODO: nonconservative terms in 2D
     return error("nonconservative terms are not implemented for DGFSBP on TreeMesh{2}")
 end
 

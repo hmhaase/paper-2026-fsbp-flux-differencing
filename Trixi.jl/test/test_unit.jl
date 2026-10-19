@@ -3905,9 +3905,9 @@ end
                                                 nodes_out -> Trixi.polynomial_interpolation_matrix(dg_basis.nodes,
                                                                                                    nodes_out))
 
-        # DGSEM no longer stores a boundary-interpolation matrix for the Lobatto
-        # basis (boundary evaluation collapses to a node lookup there); reconstruct
-        # the same M^{-1}*L quantity via the still-available generic helpers.
+        # DGSEM stores no boundary-interpolation matrix for the Lobatto basis
+        # (boundary evaluation is a node lookup there); build the same M^{-1}*L
+        # quantity from the generic helpers.
         dg_basis_boundary_lift = hcat(Trixi.calc_Lhat(Trixi.calc_L(-one(RealT),
                                                                    dg_basis.nodes,
                                                                    dg_basis.weights),

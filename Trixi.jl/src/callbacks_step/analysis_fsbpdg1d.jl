@@ -80,7 +80,6 @@ function calc_error_norms(func, u, t, analyzer,
             u_element = u[element]
             weights = quadrature_weights(basis)
 
-            # for i in eachnode(analyzer)
             for i in eachnode(basis)
                 u_exact = exact_solution(get_node_coords(cache.elements, equations, dg,
                                                          i,
