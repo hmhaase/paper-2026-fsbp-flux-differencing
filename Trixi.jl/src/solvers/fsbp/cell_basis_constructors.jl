@@ -23,7 +23,8 @@ struct LobattoLegendreCellBasisConstructor{RealT} <:
     """
         calc_poly_degree(pos, dx)
 
-    Calculate the degree of the polynomial to be constructed at cell with position `pos` and length `dx`.
+    Calculate the degree of the polynomial to be constructed at cell with position `pos`
+    and length `dx`.
     """
     calc_poly_degree::Function
 

@@ -63,7 +63,8 @@ function check_conforming_faces(interfaces, elements)
     return nothing
 end
 
-# Reuse the DGSEM 2D interface/boundary containers; face-node count taken from `surface_flux_values`.
+# Reuse the DGSEM 2D interface/boundary containers; the face-node count is taken from
+# `surface_flux_values`.
 function init_interfaces(cell_ids, mesh::TreeMesh2D,
                          elements::TreeElementBasisContainer2D)
     n_interfaces = count_required_interfaces(mesh, cell_ids)
@@ -97,7 +98,8 @@ end
     get_node_coords(elements, indices...)
 end
 
-# Boundary face nodes: normal axis pinned to the element boundary, tangential axis over its nodes.
+# Boundary face nodes: normal axis pinned to the element boundary, tangential axis over its
+# nodes.
 function calc_boundary_node_coordinates!(boundaries, element, count, direction,
                                          elements::TreeElementBasisContainer2D,
                                          mesh::TreeMesh2D, basis)

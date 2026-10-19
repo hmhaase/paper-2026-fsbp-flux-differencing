@@ -274,7 +274,8 @@ end
                                      "elixir_euler_ec.jl"),
                             tspan=(0, 0.1))
 
-        # Constructor (default: reinterpolate=true, nvisnodes=nothing -> 2*nnodes per element)
+        # Constructor (default: reinterpolate=true, nvisnodes=nothing -> 2*nnodes per
+        # element)
         @test PlotData1D(sol) isa PlotData1D
         pd = PlotData1D(sol)
 
@@ -328,7 +329,8 @@ end
         @test PlotData1D(sol) isa PlotData1D
         pd = PlotData1D(sol)
 
-        # 32 elements: 14x polydeg=3 (4 nodes), 4x polydeg=0 (1 node), 14x polydeg=1 (2 nodes)
+        # 32 elements: 14x polydeg=3 (4 nodes), 4x polydeg=0 (1 node),
+        # 14x polydeg=1 (2 nodes)
         # nvisnodes=nothing -> 2*nnodes per element: 14*8 + 4*2 + 14*4 = 176
         # nvisnodes=0 -> max(nnodes,2) per element: polydeg=0 elements get 2 instead of 1
         @test size(pd.data) == (176, 3)

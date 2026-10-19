@@ -592,7 +592,8 @@ function get_unstructured_data(u, solution_variables, mesh, equations, solver, c
     return unstructured_data
 end
 
-# Resample ragged FSBP elements onto a common N×N Gauss-Lobatto grid so `get_data_2d` applies.
+# Resample ragged FSBP elements onto a common N×N Gauss-Lobatto grid so `get_data_2d`
+# applies.
 function get_unstructured_data(u::WrappedArray, solution_variables, mesh::TreeMesh{2},
                                equations, solver::DGFSBP, cache)
     elements = cache.elements

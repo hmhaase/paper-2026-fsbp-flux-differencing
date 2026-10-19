@@ -115,7 +115,8 @@ function calc_interface_flux!(backend::Nothing, surface_flux_values, mesh::TreeM
         left_id = neighbor_ids[1, interface]
         right_id = neighbor_ids[2, interface]
 
-        # orientation 1: left -> 2 (+x), right -> 1 (-x); orientation 2: left -> 4, right -> 3
+        # orientation 1: left -> 2 (+x), right -> 1 (-x);
+        # orientation 2: left -> 4, right -> 3
         left_direction = 2 * orientations[interface]
         right_direction = 2 * orientations[interface] - 1
 

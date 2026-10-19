@@ -9,12 +9,13 @@
 # inside the type, so it is carried as a parameter (as in `P4estElementContainer`).
 struct TreeElementBasisContainer{NDIMS, RealT <: Real, uEltype <: Real, CellBasisT,
                                  NDIMSP2} <: AbstractTreeElementContainer
-    bases::Vector{CellBasisT}                         # [elements]
+    bases::Vector{CellBasisT}                        # [elements]
     nvars::Int
-    num_nodes_in_element::Vector{NTuple{NDIMS, Int}}  # per axis, per element
-    offsets::Vector{Int}                              # start of each element in the flat vector
-    surface_flux_values::Array{uEltype, NDIMSP2}      # [variables, face node..., direction, elements]
-    cell_ids::Vector{Int}                             # [elements]
+    num_nodes_in_element::Vector{NTuple{NDIMS, Int}} # per axis, per element
+    offsets::Vector{Int}                             # element starts in the flat vector
+    # [variables, face node..., direction, elements]
+    surface_flux_values::Array{uEltype, NDIMSP2}
+    cell_ids::Vector{Int}                            # [elements]
     _surface_flux_values::Vector{uEltype}             # internal `resize!`able storage
 end
 

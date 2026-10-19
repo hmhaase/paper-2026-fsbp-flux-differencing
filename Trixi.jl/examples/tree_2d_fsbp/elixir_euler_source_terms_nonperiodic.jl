@@ -8,8 +8,9 @@ equations = CompressibleEulerEquations2D(1.4)
 
 initial_condition = initial_condition_convergence_test
 
-# The same surface flux as `examples/tree_2d_dgsem/elixir_euler_source_terms_nonperiodic.jl`,
-# so the two can be compared.
+# The same surface flux as the DGSEM version of this elixir,
+# `examples/tree_2d_dgsem/elixir_euler_source_terms_nonperiodic.jl`, so the two can be
+# compared.
 solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
                 surface_flux = FluxLaxFriedrichs(max_abs_speed_naive),
                 volume_integral = VolumeIntegralWeakForm())

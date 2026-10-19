@@ -17,8 +17,11 @@ for a view of that element's whole data, shaped `(nvars, nodes...)`.
 """
 struct WrappedArray{NDIMS, T, A, WA}
     nvars::Int
-    num_nodes_in_element::Vector{NTuple{NDIMS, Int}} # node count per dimension per element; need not be equal across dimensions
-    offsets::Vector{Int} # 0, nvars*prod(nnodes(bases[1])), nvars*prod(nnodes(bases[1])) + nvars*prod(nnodes(bases[2])), ..., nvars*prod(nnodes(bases[1])) + ... + nvars*prod(nnodes(bases[n]))
+    # Node count per dimension per element; need not be equal across dimensions.
+    num_nodes_in_element::Vector{NTuple{NDIMS, Int}}
+    # Start of each element in `a`: the running sum of nvars * prod(nnodes(bases[k])),
+    # beginning at 0.
+    offsets::Vector{Int}
     a::A
 
     function WrappedArray(::Val{NDIMS}, nvars, num_nodes_in_element, offsets,

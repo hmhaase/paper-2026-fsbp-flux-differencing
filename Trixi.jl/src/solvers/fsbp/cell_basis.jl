@@ -45,7 +45,8 @@ abstract type LineBasis{RealT} <: CellBasis{RealT} end
 """
     LobattoLikeCellBasis <: LineBasis
 
-Basis including boundary nodes with quadrature_weights similar to a Gauss-Lobatto quadrature rule.
+Basis including boundary nodes with quadrature weights similar to a Gauss-Lobatto
+quadrature rule.
 """
 struct LobattoLikeCellBasis{RealT <: Real} <: LineBasis{RealT}
     _nodes::Vector{RealT}
@@ -174,9 +175,9 @@ integral hot path.
 struct GeneralSBPCellBasis{RealT <: Real} <: LineBasis{RealT}
     _nodes::Vector{RealT}
     _weights::Vector{RealT}
-    "M⁻¹Rᵀ, size (nnodes, 2); same field name and layout as LobattoLikeCellBasis.boundary_lift"
+    "M⁻¹Rᵀ, size (nnodes, 2); same name and layout as `LobattoLikeCellBasis.boundary_lift`"
     boundary_lift::Matrix{RealT}
-    "Boundary evaluation operator R, size (2, nnodes); row 1 = left (−x), row 2 = right (+x)"
+    "Boundary evaluation operator R, size (2, nnodes); row 1 left (−x), row 2 right (+x)"
     boundary_interpolation::Matrix{RealT}
     "Physical coordinates [x_left, x_right] of the element boundaries"
     boundary_nodes::SVector{2, RealT}

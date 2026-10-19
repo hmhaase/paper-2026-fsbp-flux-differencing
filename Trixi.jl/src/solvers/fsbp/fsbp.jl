@@ -60,8 +60,11 @@ end
 
 SolutionAnalyzer for spatially varying bases.
 
-- analysis_polydeg == nothing => no interpolation, compares numerical solution to exact solution at basis nodes
-- analysis_polydeg == n::Int => evaluates the exact solution and interpolates the numerical solution at n + 1 Gauss-Lobatto nodes per element and compares them there
+- `analysis_polydeg == nothing`: no interpolation; compares the numerical solution to the
+  exact solution at the basis nodes.
+- `analysis_polydeg == n::Int`: evaluates the exact solution and interpolates the numerical
+  solution at n + 1 Gauss-Lobatto nodes per element and compares them there. 1D only; on a
+  2D mesh this errors.
 """
 function SolutionAnalyzer(basis::PerCellBasis; analysis_polydeg = nothing)
     RealT = real(basis)

@@ -944,16 +944,19 @@ function PlotData1D(u::WrappedArray, mesh::TreeMesh, equations, solver::DGFSBP, 
                       orientation_x)
 end
 
-# Evaluate `func` at every node into a ragged `WrappedArray`, then reuse the solution-data method.
+# Evaluate `func` at every node into a ragged `WrappedArray`, then reuse the solution-data
+# method.
 function PlotData1D(func::Function, mesh::TreeMesh, equations, solver::DGFSBP, cache;
                     kwargs...)
     elements = cache.elements
 
-    # `func`'s output length sets the component count; it need not equal `nvariables(equations)`.
+    # `func`'s output length sets the component count; it need not equal
+    # `nvariables(equations)`.
     node_vars_1 = func(get_node_coords(elements, 1, 1), equations)
     n_vars = length(node_vars_1)
 
-    # Recompute offsets: the cache's offsets assume `nvariables(equations)` components, not `n_vars`.
+    # Recompute offsets: the cache's offsets assume `nvariables(equations)` components, not
+    # `n_vars`.
     num_nodes_in_element = elements.num_nodes_in_element
     offsets = Vector{Int}(undef, nelements(elements) + 1)
     offsets[1] = 0
