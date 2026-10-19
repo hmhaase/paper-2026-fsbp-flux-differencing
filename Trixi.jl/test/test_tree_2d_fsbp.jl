@@ -80,9 +80,7 @@ end
 end
 
 @testitem "TreeMesh2D Euler FSBP: quasi-1D reduces to the 1D solver" setup=[Setup] tags=[:tree_part1] begin
-    using Trixi
     using OrdinaryDiffEqLowStorageRK
-    using StaticArrays: SVector
 
     # Data invariant along one axis, with no velocity component across it, decouples the
     # 2D scheme into independent 1D problems, so the 1D solver is the reference.

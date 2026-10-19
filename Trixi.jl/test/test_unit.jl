@@ -4029,7 +4029,6 @@ end
 end
 
 @testitem "Unit: TensorProductCellBasis FSBP" setup=[Setup, UnitTests] tags=[:misc_part1] begin
-    using Trixi
 
     # anisotropic tensor cell [1, 3] x [-1, 2], degrees 3 (x) and 2 (y)
     bx = Trixi.LobattoLegendreCellBasis(3, 2.0, 2.0)

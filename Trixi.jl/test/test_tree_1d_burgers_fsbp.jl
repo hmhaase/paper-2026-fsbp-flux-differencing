@@ -33,7 +33,6 @@ end
     TreeMesh1DBurgersFSBP
 ] tags=[:tree_part1] begin
     using LinearAlgebra: norm
-    using Trixi
 
     trixi_include(@__MODULE__,
                   joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
@@ -58,7 +57,6 @@ end
     TreeMesh1DBurgersFSBP
 ] tags=[:tree_part1] begin
     using LinearAlgebra: norm
-    using Trixi
 
     # Both runs use the same FSBP elixir; only the solver differs.
     # DGSEM with polydeg=3 and VolumeIntegralWeakForm is the reference.
@@ -104,7 +102,6 @@ end
     Setup,
     TreeMesh1DBurgersFSBP
 ] tags=[:tree_part1] begin
-    using Trixi
 
     polydeg = 3
     nodes_ref, weights_ref = Trixi.gauss_nodes_weights(polydeg + 1)
