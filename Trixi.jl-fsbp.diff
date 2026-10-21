@@ -1,0 +1,3876 @@
+diff --git a/examples/tree_1d_fsbp/elixir_advection_boundary_layer.jl b/examples/tree_1d_fsbp/elixir_advection_boundary_layer.jl
+new file mode 100644
+index 0000000..fb27247
+--- /dev/null
++++ b/examples/tree_1d_fsbp/elixir_advection_boundary_layer.jl
+@@ -0,0 +1,91 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the linear advection equation
++
++equations = LinearScalarAdvectionEquation1D(1.0)
++
++# Full time-dependent exact solution, from characteristics of u_t + u_x = 2u with
++# u(x,0)=1 and inflow u(0,t)=1:
++#     u(x,t) = exp(2*min(x,t))     (= e^{2t} ahead of the front x>t, e^{2x} behind it).
++# This one function serves three roles:
++#   * IC at t=0           -> exp(0) = 1            (flat start, since x>=0)
++#   * left inflow BC      -> exp(2*min(0,t)) = 1   (correct inflow u(0,t)=1)
++#   * exact reference     -> true solution at every t (AnalysisCallback error norms).
++# For t >= pi the whole domain [0,pi] has reached the steady state e^{2x}.
++function initial_condition_boundary_layer(x, t,
++                                          equations::LinearScalarAdvectionEquation1D)
++    return SVector(exp(2 * min(x[1], t)))
++end
++initial_condition = initial_condition_boundary_layer
++
++# Source term s(u) = 2u
++source_terms_2u(u, x, t, equations::LinearScalarAdvectionEquation1D) = SVector(2 * u[1])
++
++boundary_condition_inflow = BoundaryConditionDirichlet(initial_condition_boundary_layer)
++
++function boundary_condition_outflow(u_inner, orientation, direction, x, t,
++                                    surface_flux_function,
++                                    equations::LinearScalarAdvectionEquation1D)
++    return flux(u_inner, orientation, equations)
++end
++
++boundary_conditions = (x_neg = boundary_condition_inflow,
++                       x_pos = boundary_condition_outflow)
++
++polydeg = 2
++nodes_ref, weights_ref = Trixi.gauss_nodes_weights(polydeg + 1)
++D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
++calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
++constructor = ReferenceCellBasisConstructor{Float64, Trixi.GeneralSBPCellBasis{Float64}}(D_ref,
++                                                                                         nodes_ref,
++                                                                                         weights_ref,
++                                                                                         calc_interp,
++                                                                                         (-1.0,
++                                                                                          1.0))
++
++volume_integral = VolumeIntegralWeakForm()
++solver = DGFSBP(constructor,
++                surface_flux = flux_godunov,  # dedicated upwind flux for advection
++                volume_integral = volume_integral)
++
++coordinates_min = 0.0
++coordinates_max = Float64(pi)
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 4,
++                n_cells_max = 10_000,
++                periodicity = false)
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
++                                    source_terms = source_terms_2u,
++                                    boundary_conditions = boundary_conditions)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++analysis_polydeg = nothing
++tspan = (0.0, 3.5)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
++                                     analysis_polydeg = analysis_polydeg)
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 0.8)
++
++# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/examples/tree_1d_fsbp/elixir_burgers_basic.jl b/examples/tree_1d_fsbp/elixir_burgers_basic.jl
+new file mode 100644
+index 0000000..384b4c5
+--- /dev/null
++++ b/examples/tree_1d_fsbp/elixir_burgers_basic.jl
+@@ -0,0 +1,57 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the (inviscid) Burgers' equation
++
++equations = InviscidBurgersEquation1D()
++
++initial_condition = initial_condition_convergence_test
++
++solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
++                surface_flux = flux_lax_friedrichs)
++
++coordinates_min = 0.0
++coordinates_max = 1.0
++periodicity = true
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 4,
++                n_cells_max = 10_000,
++                periodicity = periodicity)
++
++boundary_conditions = boundary_condition_periodic
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
++                                    source_terms = source_terms_convergence_test,
++                                    boundary_conditions = boundary_conditions)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++analysis_polydeg = nothing
++tspan = (0.0, 2.0)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
++                                     extra_analysis_errors = (:l2_error_primitive,
++                                                              :linf_error_primitive),
++                                     analysis_polydeg = analysis_polydeg)
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 0.8)
++
++# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/examples/tree_1d_fsbp/elixir_burgers_linear_stability.jl b/examples/tree_1d_fsbp/elixir_burgers_linear_stability.jl
+new file mode 100644
+index 0000000..7e28542
+--- /dev/null
++++ b/examples/tree_1d_fsbp/elixir_burgers_linear_stability.jl
+@@ -0,0 +1,57 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the (inviscid) Burgers' equation
++
++equations = InviscidBurgersEquation1D()
++
++function initial_condition_linear_stability(x, t, equation::InviscidBurgersEquation1D)
++    RealT = eltype(x)
++    k = 1
++    SVector(2 + sinpi(k * (x[1] - convert(RealT, 0.7))))
++end
++
++volume_flux = flux_ec
++solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
++                surface_flux = flux_ec,
++                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
++
++coordinates_min = -1.0
++coordinates_max = 1.0
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 4,
++                n_cells_max = 10_000, periodicity = true)
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition_linear_stability,
++                                    solver;
++                                    boundary_conditions = boundary_condition_periodic)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++tspan = (0.0, 2.0)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
++                                     extra_analysis_errors = (:l2_error_primitive,
++                                                              :linf_error_primitive),
++                                     analysis_polydeg = 6)
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 0.8)
++
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/examples/tree_1d_fsbp/elixir_burgers_mixed_basis.jl b/examples/tree_1d_fsbp/elixir_burgers_mixed_basis.jl
+new file mode 100644
+index 0000000..968b780
+--- /dev/null
++++ b/examples/tree_1d_fsbp/elixir_burgers_mixed_basis.jl
+@@ -0,0 +1,72 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the (inviscid) Burgers' equation
++
++equations = InviscidBurgersEquation1D()
++
++initial_condition = initial_condition_convergence_test
++
++# Mix two basis families across the mesh: Lobatto-Legendre on the left half,
++# a Gauss-Legendre-based GeneralSBPCellBasis (interior-only nodes) on the right.
++polydeg = 3
++nodes_ref, weights_ref = Trixi.gauss_nodes_weights(polydeg + 1)
++D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
++calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
++
++constructors = (lobatto = LobattoLegendreCellBasisConstructor{Float64}((args...) -> polydeg),
++                general = ReferenceCellBasisConstructor{Float64,
++                                                        Trixi.GeneralSBPCellBasis{Float64}}(D_ref,
++                                                                                            nodes_ref,
++                                                                                            weights_ref,
++                                                                                            calc_interp,
++                                                                                            (-1.0,
++                                                                                             1.0)))
++selector = (ctors, pos, dx) -> pos < 0.5 ? ctors.lobatto : ctors.general
++constructor = MixedCellBasisConstructor(constructors, selector)
++
++solver = DGFSBP(constructor,
++                surface_flux = flux_lax_friedrichs,
++                volume_integral = VolumeIntegralWeakForm())
++
++coordinates_min = 0.0
++coordinates_max = 1.0
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 4,
++                n_cells_max = 10_000, periodicity = true)
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
++                                    source_terms = source_terms_convergence_test,
++                                    boundary_conditions = boundary_condition_periodic)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++analysis_polydeg = nothing
++tspan = (0.0, 2.0)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
++                                     extra_analysis_errors = (:l2_error_primitive,
++                                                              :linf_error_primitive),
++                                     analysis_polydeg = analysis_polydeg)
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 0.8)
++
++# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/examples/tree_1d_fsbp/elixir_euler_ec.jl b/examples/tree_1d_fsbp/elixir_euler_ec.jl
+new file mode 100644
+index 0000000..05e1b5a
+--- /dev/null
++++ b/examples/tree_1d_fsbp/elixir_euler_ec.jl
+@@ -0,0 +1,51 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the compressible Euler equations
++equations = CompressibleEulerEquations1D(1.4)
++
++initial_condition = initial_condition_weak_blast_wave
++
++volume_flux = flux_ranocha
++solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
++                surface_flux = flux_ranocha,
++                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
++
++coordinates_min = (-2.0,)
++coordinates_max = (2.0,)
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 5,
++                n_cells_max = 10_000, periodicity = true)
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver;
++                                    boundary_conditions = boundary_condition_periodic)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++analysis_polydeg = nothing
++tspan = (0.0, 0.4)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
++                                     analysis_polydeg = analysis_polydeg)
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 0.8)
++
++# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/examples/tree_1d_fsbp/elixir_euler_ec_er.jl b/examples/tree_1d_fsbp/elixir_euler_ec_er.jl
+new file mode 100644
+index 0000000..1ecfd61
+--- /dev/null
++++ b/examples/tree_1d_fsbp/elixir_euler_ec_er.jl
+@@ -0,0 +1,56 @@
++using Trixi
++
++###############################################################################
++# semidiscretization of the compressible Euler equations
++equations = CompressibleEulerEquations1D(1.4)
++
++initial_condition = initial_condition_weak_blast_wave
++
++volume_flux = flux_ranocha
++solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
++                surface_flux = flux_ranocha,
++                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
++
++coordinates_min = (-2.0,)
++coordinates_max = (2.0,)
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 5,
++                n_cells_max = 10_000, periodicity = true)
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver;
++                                    boundary_conditions = boundary_condition_periodic)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++analysis_polydeg = nothing
++tspan = (0.0, 0.4)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
++                                     analysis_polydeg = analysis_polydeg,
++                                     analysis_integrals = (entropy,))
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 0.8)
++
++# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++relaxation_solver = Trixi.RelaxationSolverNewton(max_iterations = 5,
++                                                 root_tol = eps(Float64),
++                                                 gamma_tol = eps(Float64))
++ode_alg = Trixi.RelaxationRK44(relaxation_solver = relaxation_solver)
++
++sol = Trixi.solve(ode, ode_alg;
++                  dt = 1.0, # overwritten by the stepsize_callback
++                  save_everystep = false, callback = callbacks);
+diff --git a/examples/tree_1d_fsbp/elixir_euler_ec_variable_polynomial_degree.jl b/examples/tree_1d_fsbp/elixir_euler_ec_variable_polynomial_degree.jl
+new file mode 100644
+index 0000000..48b4298
+--- /dev/null
++++ b/examples/tree_1d_fsbp/elixir_euler_ec_variable_polynomial_degree.jl
+@@ -0,0 +1,59 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the compressible Euler equations
++equations = CompressibleEulerEquations1D(1.4)
++
++initial_condition = initial_condition_weak_blast_wave
++
++volume_flux = flux_ranocha
++solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((x_center, dx) -> let
++                                                                 if x_center < -0.3
++                                                                     3
++                                                                 elseif x_center < 0.3
++                                                                     0
++                                                                 else
++                                                                     1
++                                                                 end
++                                                             end),
++                surface_flux = flux_ranocha,
++                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
++
++coordinates_min = (-2.0,)
++coordinates_max = (2.0,)
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 5,
++                n_cells_max = 10_000, periodicity = true)
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver;
++                                    boundary_conditions = boundary_condition_periodic)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++analysis_polydeg = nothing
++tspan = (0.0, 0.4)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
++                                     analysis_polydeg = analysis_polydeg)
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 0.8)
++
++# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/examples/tree_2d_fsbp/elixir_advection_basic.jl b/examples/tree_2d_fsbp/elixir_advection_basic.jl
+new file mode 100644
+index 0000000..3d0848f
+--- /dev/null
++++ b/examples/tree_2d_fsbp/elixir_advection_basic.jl
+@@ -0,0 +1,54 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the linear advection equation
++
++advection_velocity = (0.2, -0.7)
++equations = LinearScalarAdvectionEquation2D(advection_velocity)
++
++# Create DGFSBP solver with a Lobatto-Legendre cell basis of polynomial degree = 3
++solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
++                surface_flux = flux_lax_friedrichs,
++                volume_integral = VolumeIntegralWeakForm())
++
++coordinates_min = (-1.0, -1.0) # minimum coordinates (min(x), min(y))
++coordinates_max = (1.0, 1.0) # maximum coordinates (max(x), max(y))
++
++# Create a uniformly refined mesh with periodic boundaries
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 4,
++                periodicity = true)
++
++# A semidiscretization collects data structures and functions for the spatial discretization
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition_convergence_test,
++                                    solver;
++                                    boundary_conditions = boundary_condition_periodic)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++# Create ODE problem with time span from 0.0 to 1.0
++ode = semidiscretize(semi, (0.0, 1.0))
++
++# At the beginning of the main loop, the SummaryCallback prints a summary of the simulation setup
++# and resets the timers
++summary_callback = SummaryCallback()
++
++# The AnalysisCallback allows to analyse the solution in regular intervals and prints the results
++analysis_callback = AnalysisCallback(semi, interval = 100)
++
++# The StepsizeCallback handles the re-calculation of the maximum Δt after each time step
++stepsize_callback = StepsizeCallback(cfl = 1.6)
++
++# Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver
++# (SaveSolutionCallback is not yet supported for the ragged FSBP arrays)
++callbacks = CallbackSet(summary_callback, analysis_callback, stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++# OrdinaryDiffEq's `solve` method evolves the solution in time and executes the passed callbacks
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/examples/tree_2d_fsbp/elixir_euler_ec.jl b/examples/tree_2d_fsbp/elixir_euler_ec.jl
+new file mode 100644
+index 0000000..0340512
+--- /dev/null
++++ b/examples/tree_2d_fsbp/elixir_euler_ec.jl
+@@ -0,0 +1,50 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the compressible Euler equations
++equations = CompressibleEulerEquations2D(1.4)
++
++initial_condition = initial_condition_weak_blast_wave
++
++volume_flux = flux_ranocha
++solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
++                surface_flux = flux_ranocha,
++                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
++
++coordinates_min = (-2.0, -2.0)
++coordinates_max = (2.0, 2.0)
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 5,
++                n_cells_max = 10_000,
++                periodicity = true)
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver;
++                                    boundary_conditions = boundary_condition_periodic)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++tspan = (0.0, 0.4)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval)
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 1.0)
++
++# SaveSolutionCallback is not yet supported for the ragged FSBP arrays
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++
++###############################################################################
++# run the simulation
++
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/examples/tree_2d_fsbp/elixir_euler_source_terms_nonperiodic.jl b/examples/tree_2d_fsbp/elixir_euler_source_terms_nonperiodic.jl
+new file mode 100644
+index 0000000..b3d57ac
+--- /dev/null
++++ b/examples/tree_2d_fsbp/elixir_euler_source_terms_nonperiodic.jl
+@@ -0,0 +1,58 @@
++using OrdinaryDiffEqLowStorageRK
++using Trixi
++
++###############################################################################
++# semidiscretization of the compressible Euler equations
++
++equations = CompressibleEulerEquations2D(1.4)
++
++initial_condition = initial_condition_convergence_test
++
++# The same surface flux as the DGSEM version of this elixir,
++# `examples/tree_2d_dgsem/elixir_euler_source_terms_nonperiodic.jl`, so the two can be
++# compared.
++solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3),
++                surface_flux = FluxLaxFriedrichs(max_abs_speed_naive),
++                volume_integral = VolumeIntegralWeakForm())
++
++coordinates_min = (0.0, 0.0)
++coordinates_max = (2.0, 2.0)
++mesh = TreeMesh(coordinates_min, coordinates_max,
++                initial_refinement_level = 4,
++                n_cells_max = 10_000,
++                periodicity = false)
++
++# you can either use a single function to impose the BCs weakly in all
++# 2*ndims == 4 directions or you can pass a tuple containing BCs for each direction
++# Assign a single boundary condition to all boundaries
++boundary_conditions = BoundaryConditionDirichlet(initial_condition)
++
++semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
++                                    source_terms = source_terms_convergence_test,
++                                    boundary_conditions = boundary_conditions)
++
++###############################################################################
++# ODE solvers, callbacks etc.
++
++tspan = (0.0, 2.0)
++ode = semidiscretize(semi, tspan)
++
++summary_callback = SummaryCallback()
++
++analysis_interval = 100
++analysis_callback = AnalysisCallback(semi, interval = analysis_interval)
++
++alive_callback = AliveCallback(analysis_interval = analysis_interval)
++
++stepsize_callback = StepsizeCallback(cfl = 1.0)
++
++# SaveRestart/SaveSolution are not yet supported for the ragged FSBP arrays.
++callbacks = CallbackSet(summary_callback,
++                        analysis_callback, alive_callback,
++                        stepsize_callback)
++###############################################################################
++# run the simulation
++
++sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
++            dt = 1, # solve needs some value here but it will be overwritten by the stepsize_callback
++            ode_default_options()..., callback = callbacks);
+diff --git a/src/Trixi.jl b/src/Trixi.jl
+index 74b58a5..9f4a164 100644
+--- a/src/Trixi.jl
++++ b/src/Trixi.jl
+@@ -322,7 +322,13 @@ export DG,
+        IndicatorEntropyCorrection, IndicatorEntropyCorrectionShockCapturingCombined,
+        SurfaceIntegralWeakForm, SurfaceIntegralStrongForm,
+        SurfaceIntegralUpwind,
+-       MortarL2
++       MortarL2,
++       Negative, Positive,
++       CellBasisConstructor, LobattoLegendreCellBasisConstructor,
++       ReferenceCellBasisConstructor,
++       MixedCellBasisConstructor,
++       TensorProductCellBasisConstructor,
++       DGFSBP
+ 
+ export reconstruction_O2_inner, reconstruction_O2_full,
+        reconstruction_constant,
+diff --git a/src/callbacks_step/analysis.jl b/src/callbacks_step/analysis.jl
+index 5184d5f..1b770be 100644
+--- a/src/callbacks_step/analysis.jl
++++ b/src/callbacks_step/analysis.jl
+@@ -692,6 +692,8 @@ end # @muladd
+ # specialized implementations specific to some solvers
+ include("analysis_dg1d.jl")
+ include("analysis_blockfv_1d.jl")
++include("analysis_fsbpdg1d.jl")
++include("analysis_fsbpdg2d.jl")
+ include("analysis_dg2d.jl")
+ include("analysis_blockfv_2d.jl")
+ include("analysis_surface_integral.jl")
+diff --git a/src/callbacks_step/analysis_dg1d.jl b/src/callbacks_step/analysis_dg1d.jl
+index 1fcb374..621dbf5 100644
+--- a/src/callbacks_step/analysis_dg1d.jl
++++ b/src/callbacks_step/analysis_dg1d.jl
+@@ -222,7 +222,7 @@ end
+ 
+ function integrate(func::Func, u,
+                    mesh::Union{TreeMesh{1}, StructuredMesh{1}},
+-                   equations, dg::Union{DGSEM, FDSBP}, cache;
++                   equations, dg::Union{DGSEM, FDSBP, DGFSBP}, cache;
+                    normalize = true) where {Func}
+     integrate_via_indices(u, mesh, equations, dg, cache;
+                           normalize = normalize) do u, i, element, equations, dg
+@@ -233,7 +233,7 @@ end
+ 
+ function analyze(::typeof(entropy_timederivative), du, u, t,
+                  mesh::Union{TreeMesh{1}, StructuredMesh{1}}, equations,
+-                 dg::Union{DGSEM, FDSBP}, cache)
++                 dg::Union{DGSEM, FDSBP, DGFSBP}, cache)
+     # Calculate ∫(∂S/∂u ⋅ ∂u/∂t)dΩ
+     integrate_via_indices(u, mesh, equations, dg, cache,
+                           du) do u, i, element, equations, dg, du
+diff --git a/src/callbacks_step/analysis_dg2d.jl b/src/callbacks_step/analysis_dg2d.jl
+index 22331ff..d81458e 100644
+--- a/src/callbacks_step/analysis_dg2d.jl
++++ b/src/callbacks_step/analysis_dg2d.jl
+@@ -431,7 +431,7 @@ function integrate(func::Func, u,
+                    mesh::Union{TreeMesh{2}, StructuredMesh{2}, StructuredMeshView{2},
+                                UnstructuredMesh2D, P4estMesh{2}, P4estMeshView{2},
+                                T8codeMesh{2}},
+-                   equations, dg::Union{DGSEM, FDSBP}, cache;
++                   equations, dg::Union{DGSEM, FDSBP, DGFSBP}, cache;
+                    normalize = true) where {Func}
+     integrate_via_indices(u, mesh, equations, dg, cache;
+                           normalize = normalize) do u, i, j, element, equations, dg
+@@ -460,7 +460,7 @@ end
+ function analyze(::typeof(entropy_timederivative), du, u, t,
+                  mesh::Union{TreeMesh{2}, StructuredMesh{2}, StructuredMeshView{2},
+                              UnstructuredMesh2D, P4estMesh{2}, T8codeMesh{2}},
+-                 equations, dg::Union{DGSEM, FDSBP}, cache)
++                 equations, dg::Union{DGSEM, FDSBP, DGFSBP}, cache)
+     # Calculate
+     # Calculate ∫(∂S/∂u ⋅ ∂u/∂t)dΩ
+     integrate_via_indices(u, mesh, equations, dg, cache,
+diff --git a/src/callbacks_step/analysis_fsbpdg1d.jl b/src/callbacks_step/analysis_fsbpdg1d.jl
+new file mode 100644
+index 0000000..5a87995
+--- /dev/null
++++ b/src/callbacks_step/analysis_fsbpdg1d.jl
+@@ -0,0 +1,125 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++function create_cache_analysis(analyzer, mesh::TreeMesh{1},
++                               equations, dg::DGFSBP, cache,
++                               RealT, uEltype)
++    if isnothing(analyzer.analysis_polydeg)
++        (;)
++    else
++        nnodes_ = analyzer.analysis_polydeg + 1
++
++        RealT = real(dg)
++        nodes, weights = gauss_lobatto_nodes_weights(nnodes_, RealT)
++
++        # pre-allocate buffers
++        # We use `StrideArray`s here since these buffers are used in performance-critical
++        # places and the additional information passed to the compiler makes them faster
++        # than native `Array`s.
++        u_local = StrideArray(undef, uEltype,
++                              StaticInt(nvariables(equations)),
++                              StaticInt(analyzer.analysis_polydeg + 1))
++        x_local = StrideArray(undef, RealT,
++                              StaticInt(ndims(equations)),
++                              StaticInt(analyzer.analysis_polydeg + 1))
++
++        (; u_local, x_local, nodes, weights)
++    end
++end
++
++function integrate_via_indices(func::Func, u,
++                               mesh::TreeMesh{1}, equations, dg::DGFSBP, cache,
++                               args...; normalize = true) where {Func}
++
++    # Initialize integral with zeros of the right shape
++    integral = zero(func(u, 1, 1, equations, dg, args...))
++
++    # Use quadrature to numerically integrate over entire domain
++    @batch reduction=(+, integral) for element in eachelement(dg, cache)
++        basis = cache.elements.bases[element]
++        weights = quadrature_weights(basis)
++        for i in eachnode(basis)
++            integral += weights[i] *
++                        func(u, i, element, equations, dg, args...)
++        end
++    end
++
++    # Normalize with total volume
++    if normalize
++        integral = integral / total_volume(mesh)
++    end
++
++    return integral
++end
++
++"""
++    calc_error_norms(func, u, t, analyzer,
++                          mesh::TreeMesh{1}, equations, exact_solution,
++                          dg::DGFSBP, cache, cache_analysis)
++
++Calculate L2 and LInf error for func(u_exact) and func(u), where
++`u_exact(x, t) = exact_solution(x, t, equations)`.
++The L2 and LInf norms are approximated using some quadrature rule given by the analyzer.
++"""
++function calc_error_norms(func, u, t, analyzer,
++                          mesh::TreeMesh{1}, equations, exact_solution,
++                          dg::DGFSBP, cache, cache_analysis)
++
++    # Set up data structures
++    l2_error = zero(func(get_node_vars(u[1], equations, dg, 1), equations))
++    linf_error = copy(l2_error)
++
++    if isnothing(analyzer.analysis_polydeg)
++        # Iterate over all elements for error calculations
++        for element in eachelement(dg, cache)
++            basis = cache.elements.bases[element]
++            u_element = u[element]
++            weights = quadrature_weights(basis)
++
++            for i in eachnode(basis)
++                u_exact = exact_solution(get_node_coords(cache.elements, equations, dg,
++                                                         i,
++                                                         element), t,
++                                         equations)
++                diff = func(u_exact, equations) -
++                       func(get_node_vars(u_element, equations, dg, i), equations)
++                l2_error += diff .^ 2 * weights[i]
++                linf_error = @. max(linf_error, abs(diff))
++            end
++        end
++    else
++        @unpack u_local, x_local, nodes, weights = cache_analysis
++
++        # Iterate over all elements for error calculations
++        for element in eachelement(dg, cache)
++            cell_id = cache.elements.cell_ids[element]
++            dx2 = length_at_cell(mesh.tree, cell_id) / 2
++            p = cell_coordinates(mesh.tree, cell_id)[1] # cell center
++            x_local[1, :] .= nodes .* dx2 .+ p
++
++            # TODO: Make this more efficient
++            vandermonde = interpolation_matrix(cache.elements.bases[element], x_local)
++            multiply_dimensionwise!(u_local, vandermonde, u[element])
++
++            for i in 1:length(nodes)
++                u_exact = exact_solution(get_node_coords(x_local, equations, dg, i), t,
++                                         equations)
++                diff = func(u_exact, equations) -
++                       func(get_node_vars(u_local, equations, dg, i), equations)
++                l2_error += diff .^ 2 * (weights[i] * dx2)
++                linf_error = @. max(linf_error, abs(diff))
++            end
++        end
++    end
++
++    # For L2 error, divide by total volume
++    total_volume_ = total_volume(mesh)
++    l2_error = @. sqrt(l2_error / total_volume_)
++
++    return l2_error, linf_error
++end
++end # @muladd
+diff --git a/src/callbacks_step/analysis_fsbpdg2d.jl b/src/callbacks_step/analysis_fsbpdg2d.jl
+new file mode 100644
+index 0000000..7c4bdc0
+--- /dev/null
++++ b/src/callbacks_step/analysis_fsbpdg2d.jl
+@@ -0,0 +1,84 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++function create_cache_analysis(analyzer, mesh::TreeMesh{2},
++                               equations, dg::DGFSBP, cache,
++                               RealT, uEltype)
++    if isnothing(analyzer.analysis_polydeg)
++        (;)
++    else
++        error("analysis_polydeg interpolation is not yet implemented for 2D DGFSBP")
++    end
++end
++
++function integrate_via_indices(func::Func, u,
++                               mesh::TreeMesh{2}, equations, dg::DGFSBP, cache,
++                               args...; normalize = true) where {Func}
++    # Initialize integral with zeros of the right shape
++    integral = zero(func(u, 1, 1, 1, equations, dg, args...))
++
++    # Use tensor quadrature (w_i * w_j) to numerically integrate over the domain
++    @batch reduction=(+, integral) for element in eachelement(dg, cache)
++        bx, by = cache.elements.bases[element].bases
++        wx = quadrature_weights(bx)
++        wy = quadrature_weights(by)
++        for j in eachnode(by), i in eachnode(bx)
++            integral += wx[i] * wy[j] *
++                        func(u, i, j, element, equations, dg, args...)
++        end
++    end
++
++    # Normalize with total volume
++    if normalize
++        integral = integral / total_volume(mesh)
++    end
++
++    return integral
++end
++
++"""
++    calc_error_norms(func, u, t, analyzer,
++                          mesh::TreeMesh{2}, equations, exact_solution,
++                          dg::DGFSBP, cache, cache_analysis)
++
++Calculate L2 and LInf error for func(u_exact) and func(u), where
++`u_exact(x, t) = exact_solution(x, t, equations)`.
++The L2 and LInf norms are approximated using some quadrature rule given by the analyzer.
++"""
++function calc_error_norms(func, u, t, analyzer,
++                          mesh::TreeMesh{2}, equations, exact_solution,
++                          dg::DGFSBP, cache, cache_analysis)
++    l2_error = zero(func(get_node_vars(u[1], equations, dg, 1, 1), equations))
++    linf_error = copy(l2_error)
++
++    if !isnothing(analyzer.analysis_polydeg)
++        error("analysis_polydeg interpolation is not yet implemented for 2D DGFSBP")
++    end
++
++    for element in eachelement(dg, cache)
++        bx, by = cache.elements.bases[element].bases
++        wx = quadrature_weights(bx)
++        wy = quadrature_weights(by)
++        u_element = u[element]
++
++        for j in eachnode(by), i in eachnode(bx)
++            x_node = get_node_coords(cache.elements, i, j, element)
++            u_exact = exact_solution(x_node, t, equations)
++            diff = func(u_exact, equations) -
++                   func(get_node_vars(u_element, equations, dg, i, j), equations)
++            l2_error += diff .^ 2 * (wx[i] * wy[j])
++            linf_error = @. max(linf_error, abs(diff))
++        end
++    end
++
++    # For L2 error, divide by total volume
++    total_volume_ = total_volume(mesh)
++    l2_error = @. sqrt(l2_error / total_volume_)
++
++    return l2_error, linf_error
++end
++end # @muladd
+diff --git a/src/callbacks_step/stepsize.jl b/src/callbacks_step/stepsize.jl
+index e322211..4d422b1 100644
+--- a/src/callbacks_step/stepsize.jl
++++ b/src/callbacks_step/stepsize.jl
+@@ -241,4 +241,7 @@ end
+ include("stepsize_dg1d.jl")
+ include("stepsize_dg2d.jl")
+ include("stepsize_dg3d.jl")
++
++include("stepsize_fsbpdg1d.jl")
++include("stepsize_fsbpdg2d.jl")
+ end # @muladd
+diff --git a/src/callbacks_step/stepsize_fsbpdg1d.jl b/src/callbacks_step/stepsize_fsbpdg1d.jl
+new file mode 100644
+index 0000000..392873a
+--- /dev/null
++++ b/src/callbacks_step/stepsize_fsbpdg1d.jl
+@@ -0,0 +1,54 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++function max_dt(u, t, mesh::TreeMesh{1},
++                constant_speed::False, equations,
++                dg::DGFSBP, cache)
++    # Avoid division by zero if the speed vanishes everywhere
++    max_scaled_speed = nextfloat(zero(t))
++
++    @batch reduction=(max, max_scaled_speed) for element in eachelement(dg, cache)
++        basis = cache.elements.bases[element]
++        u_element = u[element]
++        max_lambda1 = zero(max_scaled_speed)
++        for i in eachnode(basis)
++            u_node = get_node_vars(u_element, equations, dg, i)
++            lambda1, = max_abs_speeds(u_node, equations)
++            max_lambda1 = Base.max(max_lambda1, lambda1)
++        end
++        Δx = length_at_cell(mesh.tree, cache.elements.cell_ids[element])
++        # Use `Base.max` to prevent silent failures, as `max` from `@fastmath` doesn't propagate
++        # `NaN`s properly. See https://github.com/trixi-framework/Trixi.jl/pull/2445#discussion_r2336812323
++        max_scaled_speed = Base.max(max_scaled_speed,
++                                    nnodes(basis) / Δx *
++                                    max_lambda1)
++    end
++
++    return 1 / max_scaled_speed
++end
++
++function max_dt(u, t, mesh::TreeMesh{1},
++                constant_speed::True, equations,
++                dg::DGFSBP, cache)
++    # Avoid division by zero if the speed vanishes everywhere,
++    # e.g. for steady-state linear advection
++    max_scaled_speed = nextfloat(zero(t))
++
++    max_lambda1, = max_abs_speeds(equations)
++
++    @batch reduction=(max, max_scaled_speed) for element in eachelement(dg, cache)
++        Δx = length_at_cell(mesh.tree, cache.elements.cell_ids[element])
++        # Use `Base.max` to prevent silent failures, as `max` from `@fastmath` doesn't propagate
++        # `NaN`s properly. See https://github.com/trixi-framework/Trixi.jl/pull/2445#discussion_r2336812323
++        max_scaled_speed = Base.max(max_scaled_speed,
++                                    nnodes(cache.elements.bases[element]) / Δx *
++                                    max_lambda1)
++    end
++
++    return 1 / max_scaled_speed
++end
++end # @muladd
+diff --git a/src/callbacks_step/stepsize_fsbpdg2d.jl b/src/callbacks_step/stepsize_fsbpdg2d.jl
+new file mode 100644
+index 0000000..e5bcead
+--- /dev/null
++++ b/src/callbacks_step/stepsize_fsbpdg2d.jl
+@@ -0,0 +1,54 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++function max_dt(u, t, mesh::TreeMesh{2},
++                constant_speed::False, equations, dg::DGFSBP, cache)
++    # Avoid division by zero if the speed vanishes everywhere
++    max_scaled_speed = nextfloat(zero(t))
++
++    @batch reduction=(max, max_scaled_speed) for element in eachelement(dg, cache)
++        bx, by = cache.elements.bases[element].bases
++        u_element = u[element]
++        max_lambda1 = max_lambda2 = zero(max_scaled_speed)
++        for j in eachnode(by), i in eachnode(bx)
++            u_node = get_node_vars(u_element, equations, dg, i, j)
++            lambda1, lambda2 = max_abs_speeds(u_node, equations)
++            max_lambda1 = Base.max(max_lambda1, lambda1)
++            max_lambda2 = Base.max(max_lambda2, lambda2)
++        end
++        Δ = length_at_cell(mesh.tree, cache.elements.cell_ids[element]) # square cell
++        # Use `Base.max` to prevent silent failures, as `max` from `@fastmath` doesn't propagate
++        # `NaN`s properly. See https://github.com/trixi-framework/Trixi.jl/pull/2445#discussion_r2336812323
++        max_scaled_speed = Base.max(max_scaled_speed,
++                                    (nnodes(bx) * max_lambda1 +
++                                     nnodes(by) * max_lambda2) / Δ)
++    end
++
++    return 1 / max_scaled_speed
++end
++
++function max_dt(u, t, mesh::TreeMesh{2},
++                constant_speed::True, equations, dg::DGFSBP, cache)
++    # Avoid division by zero if the speed vanishes everywhere,
++    # e.g. for steady-state linear advection
++    max_scaled_speed = nextfloat(zero(t))
++
++    max_lambda1, max_lambda2 = max_abs_speeds(equations)
++
++    @batch reduction=(max, max_scaled_speed) for element in eachelement(dg, cache)
++        bx, by = cache.elements.bases[element].bases
++        Δ = length_at_cell(mesh.tree, cache.elements.cell_ids[element])
++        # Use `Base.max` to prevent silent failures, as `max` from `@fastmath` doesn't propagate
++        # `NaN`s properly. See https://github.com/trixi-framework/Trixi.jl/pull/2445#discussion_r2336812323
++        max_scaled_speed = Base.max(max_scaled_speed,
++                                    (nnodes(bx) * max_lambda1 +
++                                     nnodes(by) * max_lambda2) / Δ)
++    end
++
++    return 1 / max_scaled_speed
++end
++end # @muladd
+diff --git a/src/solvers/dg.jl b/src/solvers/dg.jl
+index 81afbb7..a6fcf82 100644
+--- a/src/solvers/dg.jl
++++ b/src/solvers/dg.jl
+@@ -962,6 +962,16 @@ In particular, not the nodes themselves are returned.
+ @inline eachnode(dg::DG) = Base.OneTo(nnodes(dg))
+ @inline nnodes(dg::DG) = nnodes(dg.basis)
+ 
++"""
++    eachnode(dg::DG, elements, element)
++
++Return an iterator over the indices that specify the location in relevant data structures
++for the nodes in `dg` for a specific element of elements.
++In particular, not the nodes themselves are returned.
++"""
++@inline eachnode(dg::DG, elements, element) = Base.OneTo(nnodes(dg))
++@inline nnodes(dg::DG, elements, element) = nnodes(dg.basis)
++
+ # This is used in some more general analysis code and needs to dispatch on the
+ # `mesh` for some combinations of mesh/solver.
+ @inline nelements(mesh, dg::DG, cache) = nelements(dg, cache)
+@@ -1039,7 +1049,7 @@ end
+ # - https://github.com/trixi-framework/Trixi.jl/issues/88
+ # - https://github.com/trixi-framework/Trixi.jl/issues/87
+ # - https://github.com/trixi-framework/Trixi.jl/issues/86
+-@inline function get_node_coords(x, equations, solver::DG, indices...)
++@inline function get_node_coords(x::AbstractArray, equations, solver::DG, indices...)
+     return SVector(ntuple(@inline(idx->x[idx, indices...]), Val(ndims(equations))))
+ end
+ 
+@@ -1123,6 +1133,12 @@ AdaptorAMR(mesh, dg::DG) = AdaptorL2(dg.basis)
+ # DGSEM (discontinuous Galerkin spectral element method)
+ include("dgsem/dgsem.jl")
+ 
++@inline function get_node_coords(elements::AbstractElementContainer, equations,
++                                 solver::DG, indices...)
++    SVector(ntuple(@inline(idx->elements.node_coordinates[idx, indices...]),
++                   Val(ndims(equations))))
++end
++
+ # Finite difference methods using summation by parts (SBP) operators
+ # These methods are very similar to DG methods since they also impose interface
+ # and boundary conditions weakly. Thus, these methods can re-use a lot of
+@@ -1238,8 +1254,8 @@ end
+ function compute_coefficients!(backend::Nothing, u, func, t, mesh::AbstractMesh{1},
+                                equations, dg::DG, cache)
+     @threaded for element in eachelement(dg, cache)
+-        for i in eachnode(dg)
+-            x_node = get_node_coords(cache.elements.node_coordinates, equations, dg, i,
++        for i in eachnode(dg, cache.elements, element)
++            x_node = get_node_coords(cache.elements, equations, dg, i,
+                                      element)
+             # Changing the node positions passed to the initial condition by the minimum
+             # amount possible with the current type of floating point numbers allows setting
+@@ -1247,7 +1263,7 @@ function compute_coefficients!(backend::Nothing, u, func, t, mesh::AbstractMesh{
+             # works if the jump location `x_jump` is at the position of an interface.
+             if i == 1
+                 x_node = SVector(nextfloat(x_node[1]))
+-            elseif i == nnodes(dg)
++            elseif i == nnodes(dg, cache.elements, element)
+                 x_node = SVector(prevfloat(x_node[1]))
+             end
+             u_node = func(x_node, t, equations)
+@@ -1319,4 +1335,8 @@ include("dgsem_structured/dg.jl")
+ include("dgsem_unstructured/dg.jl")
+ include("dgsem_p4est/dg.jl")
+ include("dgsem_t8code/dg.jl")
++
++include("fsbp/fsbp.jl")
++
++include("fsbp_tree/fsbp.jl")
+ end # @muladd
+diff --git a/src/solvers/dgsem/basis_lobatto_legendre.jl b/src/solvers/dgsem/basis_lobatto_legendre.jl
+index 61aa982..a889a65 100644
+--- a/src/solvers/dgsem/basis_lobatto_legendre.jl
++++ b/src/solvers/dgsem/basis_lobatto_legendre.jl
+@@ -439,7 +439,7 @@ function polynomial_derivative_matrix(nodes)
+     return D
+ end
+ 
+-# Calculate and interpolation matrix (Vandermonde matrix) between two given sets of nodes
++# Calculate an interpolation matrix (Vandermonde matrix) between two given sets of nodes
+ # See algorithm 32 "PolynomialInterpolationMatrix" from Kopriva's book.
+ function polynomial_interpolation_matrix(nodes_in, nodes_out,
+                                          baryweights_in = barycentric_weights(nodes_in))
+diff --git a/src/solvers/dgsem_tree/containers.jl b/src/solvers/dgsem_tree/containers.jl
+index 6e57612..503cc43 100644
+--- a/src/solvers/dgsem_tree/containers.jl
++++ b/src/solvers/dgsem_tree/containers.jl
+@@ -34,6 +34,7 @@ abstract type AbstractTreeInterfaceContainer <: AbstractInterfaceContainer end
+ 
+ # Return number of interfaces
+ @inline ninterfaces(interfaces::AbstractTreeInterfaceContainer) = length(interfaces.orientations)
++@inline eachinterface(interfaces::AbstractTreeInterfaceContainer) = Base.OneTo(ninterfaces(interfaces))
+ # Return number of interface nodes for 2D and 3D. For 1D hard-coded to 1 interface node.
+ @inline nnodes(interfaces::AbstractTreeInterfaceContainer) = size(interfaces.u, 3)
+ # Return number of equation variables
+diff --git a/src/solvers/dgsem_tree/dg_1d.jl b/src/solvers/dgsem_tree/dg_1d.jl
+index 4c194c3..cab8142 100644
+--- a/src/solvers/dgsem_tree/dg_1d.jl
++++ b/src/solvers/dgsem_tree/dg_1d.jl
+@@ -398,7 +398,10 @@ function prolong2interfaces!(cache, u_or_flux_parabolic,
+ 
+         # interface in x-direction
+         for v in eachvariable(equations)
+-            interfaces_u[1, v, interface] = u_or_flux_parabolic[v, nnodes(dg),
++            interfaces_u[1, v, interface] = u_or_flux_parabolic[v,
++                                                                nnodes(dg,
++                                                                       cache.elements,
++                                                                       left_element),
+                                                                 left_element]
+             interfaces_u[2, v, interface] = u_or_flux_parabolic[v, 1, right_element]
+         end
+@@ -532,7 +535,10 @@ function prolong2boundaries!(backend::Nothing, cache, u_or_flux_parabolic,
+         if neighbor_sides[boundary] == 1
+             # element in -x direction of boundary
+             for v in eachvariable(equations)
+-                boundaries.u[1, v, boundary] = u_or_flux_parabolic[v, nnodes(dg),
++                boundaries.u[1, v, boundary] = u_or_flux_parabolic[v,
++                                                                   nnodes(dg,
++                                                                          cache.elements,
++                                                                          element),
+                                                                    element]
+             end
+         else # Element in +x direction of boundary
+@@ -773,12 +779,10 @@ end
+ 
+ function calc_sources!(backend::Nothing, du, u, t, source_terms,
+                        equations::AbstractEquations{1}, dg::DG, cache)
+-    @unpack node_coordinates = cache.elements
+-
+     @threaded for element in eachelement(dg, cache)
+-        for i in eachnode(dg)
++        for i in eachnode(dg, cache.elements, element)
+             u_local = get_node_vars(u, equations, dg, i, element)
+-            x_local = get_node_coords(node_coordinates, equations, dg,
++            x_local = get_node_coords(cache.elements, equations, dg,
+                                       i, element)
+             du_local = source_terms(u_local, x_local, t, equations)
+             add_to_node_vars!(du, du_local, equations, dg, i, element)
+diff --git a/src/solvers/fsbp/calc_volume_integral.jl b/src/solvers/fsbp/calc_volume_integral.jl
+new file mode 100644
+index 0000000..bb55e87
+--- /dev/null
++++ b/src/solvers/fsbp/calc_volume_integral.jl
+@@ -0,0 +1,33 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++function calc_volume_integral!(backend::Nothing, du, u, mesh,
++                               have_nonconservative_terms, equations,
++                               volume_integral::VolumeIntegralFluxDifferencing,
++                               dg::DGFSBP, cache)
++    @threaded for element in eachelement(dg, cache)
++        flux_differencing_kernel!(du, u, element, typeof(mesh),
++                                  have_nonconservative_terms, equations,
++                                  volume_integral.volume_flux, dg, cache)
++    end
++
++    return nothing
++end
++
++function calc_volume_integral!(backend::Nothing, du, u, mesh,
++                               have_nonconservative_terms, equations,
++                               volume_integral::VolumeIntegralWeakForm,
++                               dg::DGFSBP, cache)
++    @threaded for element in eachelement(dg, cache)
++        weak_form_kernel!(du, u, element, typeof(mesh),
++                          have_nonconservative_terms, equations,
++                          dg, cache)
++    end
++
++    return nothing
++end
++end # @muladd
+diff --git a/src/solvers/fsbp/cell_basis.jl b/src/solvers/fsbp/cell_basis.jl
+new file mode 100644
+index 0000000..984edec
+--- /dev/null
++++ b/src/solvers/fsbp/cell_basis.jl
+@@ -0,0 +1,278 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++"Marker for the face at the negative end of an axis (left in 1D)."
++struct Negative end
++"Marker for the face at the positive end of an axis (right in 1D)."
++struct Positive end
++
++"""
++    CellBasis{RealT}
++
++Base type for a basis on one element. Must implement:
++- real(::CellBasis)
++- ndofs_per_element(::CellBasis)
++- eachnode(::CellBasis)
++- index_ndims(::CellBasis)
++"""
++abstract type CellBasis{RealT} end
++
++"""
++    LineBasis{RealT} <: CellBasis{RealT}
++
++A 1D SBP operator (one node set + its matrices/boundary operators). In addition to the
++`CellBasis` methods, must implement:
++- get_nodes(::LineBasis)
++- nnodes(::LineBasis)
++- quadrature_weights(::LineBasis)
++- interpolation_matrix(::LineBasis, nodes_out)
++- boundary_value!, apply_surface_lift_line!, boundary_coordinate
++
++Fields:
++- boundary_lift    # M⁻¹Rᵀ, [nnodes, 2] (Lobatto: R = [e_1, e_N]ᵀ)
++- derivative_split # 2D - M⁻¹B, skew-symmetric split form (flux differencing)
++- derivative_dhat  # weak form, dhat[j,n] = -D'[j,n] w[n] / w[j]
++"""
++abstract type LineBasis{RealT} <: CellBasis{RealT} end
++
++@inline index_ndims(basis::CellBasis) = index_ndims(typeof(basis))
++@inline index_ndims(::Type{<:LineBasis}) = 1
++
++"""
++    LobattoLikeCellBasis <: LineBasis
++
++Basis including boundary nodes with quadrature weights similar to a Gauss-Lobatto
++quadrature rule.
++"""
++struct LobattoLikeCellBasis{RealT <: Real} <: LineBasis{RealT}
++    _nodes::Vector{RealT}
++    _weights::Vector{RealT}
++
++    "Matrix L such that \$L^T M u = [u_L, u_R]^T\$, that is \$L = M⁻¹ [e_1, e_N]\$"
++    boundary_lift::Matrix{RealT} # lhat
++
++    derivative_split::Matrix{RealT} # 2D - M⁻¹B, skew-symmetric split form
++    derivative_dhat::Matrix{RealT} # weak form matrix "dhat"
++
++    """
++        calc_interpolation_matrix(nodes_out)
++
++    Return the interpolation matrix from the basis nodes to `nodes_out`.
++    `nodes_out` are in the same coordinate space as the basis nodes (physical space).
++    The basis nodes are captured in the callable, it takes only the target nodes.
++    Returns a matrix `V` of size `(length(nodes_out), nnodes)` such that
++    `u_target = V * u_basis` interpolates from basis node values to target node values.
++    """
++    calc_interpolation_matrix::Any
++end
++
++get_nodes(basis::LobattoLikeCellBasis) = basis._nodes
++eachnode(basis::LobattoLikeCellBasis) = Base.OneTo(nnodes(basis))
++nnodes(basis::LobattoLikeCellBasis) = length(basis._nodes)
++ndofs_per_element(basis::LobattoLikeCellBasis) = nnodes(basis)
++quadrature_weights(basis::LobattoLikeCellBasis) = basis._weights
++
++# TODO: Consider specifying a formal description of where the new nodes should be
++# for example n gauss lobatto nodes within the domain of the basis and then caching
++# the vandermonde matrix
++#
++# Currently required for error calculation and plotting
++function interpolation_matrix(basis::LobattoLikeCellBasis, nodes_out)
++    basis.calc_interpolation_matrix(nodes_out)
++end
++
++@inline Base.real(::LobattoLikeCellBasis{RealT}) where {RealT <: Real} = RealT
++
++@inline boundary_coordinate(basis::LobattoLikeCellBasis, ::Negative) = basis._nodes[1]
++@inline boundary_coordinate(basis::LobattoLikeCellBasis, ::Positive) = basis._nodes[end]
++
++@inline function boundary_value!(dest, u_line, ::LobattoLikeCellBasis, ::Negative)
++    dest .= @view u_line[:, 1]
++end
++@inline function boundary_value!(dest, u_line, ::LobattoLikeCellBasis, ::Positive)
++    dest .= @view u_line[:, end]
++end
++
++# `boundary_lift` is nonzero only at the two endpoint nodes for Lobatto-like bases.
++@inline function apply_surface_lift_line!(du_line, sflux_neg, sflux_pos,
++                                          basis::LobattoLikeCellBasis, equations)
++    boundary_lift = basis.boundary_lift
++    n = nnodes(basis)
++    factor_neg = boundary_lift[1, 1]
++    factor_pos = boundary_lift[n, 2]
++    for v in eachvariable(equations)
++        du_line[v, 1] = du_line[v, 1] - sflux_neg[v] * factor_neg
++        du_line[v, n] = du_line[v, n] + sflux_pos[v] * factor_pos
++    end
++end
++
++function LobattoLikeCellBasis(nodes, weights, derivative_matrix,
++                              calc_interpolation_matrix)
++    RealT = eltype(nodes)
++    @assert RealT <: Real
++    boundary_lift = zeros(RealT, length(nodes), 2)
++    boundary_lift[1, 1] = 1 / weights[1]
++    boundary_lift[end, end] = 1 / weights[end]
++    # 2D - M⁻¹B
++    #
++    # M⁻¹ = diagm(1 ./ weights)
++    # B = diagm(-1, 0, ..., 0, 1)
++    # => M⁻¹B = diagm(-1/w_1, 0, ..., 0, 1/w_end)
++    derivative_split = 2 * derivative_matrix
++    derivative_split[1, 1] -= -1 / weights[1]
++    derivative_split[end, end] -= 1 / weights[end]
++
++    # Weak form matrix: dhat[j,n] = -D'[j,n] * w[n] / w[j]
++    derivative_dhat = -derivative_matrix' .* weights' ./ weights
++
++    LobattoLikeCellBasis{RealT}(nodes, weights, boundary_lift, derivative_split,
++                                derivative_dhat, calc_interpolation_matrix)
++end
++
++"""
++    LobattoLegendreCellBasis
++
++Construct the standard Lobatto Legendre Basis with Gauss-Lobatto quadrature.
++"""
++function LobattoLegendreCellBasis(polydeg::Int, pos::RealT,
++                                  dx::RealT) where {RealT <: Real}
++    nnodes_ = polydeg + 1
++
++    nodes, weights = gauss_lobatto_nodes_weights(nnodes_, RealT)
++    J = dx / 2
++    nodes = J .* nodes .+ pos
++    weights = abs(J) .* weights
++
++    boundary_lift = zeros(RealT, nnodes_, 2)
++    boundary_lift[:, 1] = calc_Lhat(calc_L(J * -one(RealT) + pos, nodes, weights),
++                                    weights)
++    boundary_lift[:, 2] = calc_Lhat(calc_L(J * one(RealT) + pos, nodes, weights),
++                                    weights)
++
++    derivative_matrix = polynomial_derivative_matrix(nodes)
++    derivative_split = calc_Dsplit(derivative_matrix, weights)
++    derivative_dhat = calc_Dhat(derivative_matrix, weights)
++
++    calc_interp = nodes_out -> polynomial_interpolation_matrix(nodes, nodes_out)
++
++    LobattoLikeCellBasis{RealT}(nodes, weights, boundary_lift, derivative_split,
++                                derivative_dhat, calc_interp)
++end
++
++"""
++    GeneralSBPCellBasis <: LineBasis
++
++Basis for general SBP operators where nodes need not include element boundaries.
++The boundary interpolation/extrapolation operator R is stored as `boundary_interpolation`
++(shape `(2, nnodes)`, row 1 = left/−x, row 2 = right/+x) and maps node values to boundary
++values.  `boundary_lift = M⁻¹Rᵀ` (shape `(nnodes, 2)`) is pre-computed for the surface
++integral hot path.
++"""
++struct GeneralSBPCellBasis{RealT <: Real} <: LineBasis{RealT}
++    _nodes::Vector{RealT}
++    _weights::Vector{RealT}
++    "M⁻¹Rᵀ, size (nnodes, 2); same name and layout as `LobattoLikeCellBasis.boundary_lift`"
++    boundary_lift::Matrix{RealT}
++    "Boundary evaluation operator R, size (2, nnodes); row 1 left (−x), row 2 right (+x)"
++    boundary_interpolation::Matrix{RealT}
++    "Physical coordinates [x_left, x_right] of the element boundaries"
++    boundary_nodes::SVector{2, RealT}
++    derivative_split::Matrix{RealT}
++    derivative_dhat::Matrix{RealT}
++    calc_interpolation_matrix::Any
++end
++
++get_nodes(basis::GeneralSBPCellBasis) = basis._nodes
++eachnode(basis::GeneralSBPCellBasis) = Base.OneTo(nnodes(basis))
++nnodes(basis::GeneralSBPCellBasis) = length(basis._nodes)
++ndofs_per_element(basis::GeneralSBPCellBasis) = nnodes(basis)
++quadrature_weights(basis::GeneralSBPCellBasis) = basis._weights
++
++function interpolation_matrix(basis::GeneralSBPCellBasis, nodes_out)
++    basis.calc_interpolation_matrix(nodes_out)
++end
++
++@inline Base.real(::GeneralSBPCellBasis{RealT}) where {RealT <: Real} = RealT
++
++@inline boundary_coordinate(basis::GeneralSBPCellBasis,
++::Negative) = basis.boundary_nodes[1]
++@inline boundary_coordinate(basis::GeneralSBPCellBasis,
++::Positive) = basis.boundary_nodes[2]
++
++@inline function boundary_value!(dest, u_line, basis::GeneralSBPCellBasis, ::Negative)
++    mul!(dest, u_line, @view basis.boundary_interpolation[1, :])
++end
++@inline function boundary_value!(dest, u_line, basis::GeneralSBPCellBasis, ::Positive)
++    mul!(dest, u_line, @view basis.boundary_interpolation[2, :])
++end
++
++@inline function apply_surface_lift_line!(du_line, sflux_neg, sflux_pos,
++                                          basis::GeneralSBPCellBasis, equations)
++    boundary_lift = basis.boundary_lift
++    for i in eachnode(basis)
++        for v in eachvariable(equations)
++            du_line[v, i] = (du_line[v, i] - sflux_neg[v] * boundary_lift[i, 1] +
++                             sflux_pos[v] * boundary_lift[i, 2])
++        end
++    end
++end
++
++function GeneralSBPCellBasis(nodes, boundary_nodes, weights, D,
++                             calc_interpolation_matrix)
++    RealT = eltype(nodes)
++    n = length(nodes)
++    @assert size(D) == (n, n)
++
++    # Derive R by evaluating the interpolation operator at the physical boundary points
++    boundary_interpolation = calc_interpolation_matrix(boundary_nodes)
++    @assert size(boundary_interpolation) == (2, n)
++
++    # boundary_lift = M⁻¹Rᵀ:  lift[i,j] = R[j,i] / w[i]
++    boundary_lift = Matrix{RealT}(undef, n, 2)
++    for j in 1:2, i in 1:n
++        boundary_lift[i, j] = boundary_interpolation[j, i] / weights[i]
++    end
++
++    # derivative_split = 2D − M⁻¹B,  B = Rᵀ diag(−1, 1) R
++    # [-1,1] .* boundary_interpolation scales row 1 by -1 and row 2 by +1 (diag(-1,1)*R)
++    # then (n×2)*(2×n) gives B
++    B = boundary_interpolation' * ([-one(RealT), one(RealT)] .* boundary_interpolation)
++    derivative_split = 2 * D - (1 ./ weights) .* B
++
++    # derivative_dhat = −Dᵀ .* wᵀ ./ w  (weak form matrix)
++    derivative_dhat = -D' .* weights' ./ weights
++
++    GeneralSBPCellBasis{RealT}(Vector{RealT}(nodes), Vector{RealT}(weights),
++                               Matrix{RealT}(boundary_lift),
++                               Matrix{RealT}(boundary_interpolation),
++                               SVector{2, RealT}(boundary_nodes),
++                               Matrix{RealT}(derivative_split),
++                               Matrix{RealT}(derivative_dhat),
++                               calc_interpolation_matrix)
++end
++
++"""
++    TensorProductCellBasis{NDIMS, RealT, B} <: CellBasis{RealT}
++
++Tensor product of `NDIMS` `LineBasis`es (one per axis; types may differ).
++"""
++struct TensorProductCellBasis{NDIMS, RealT,
++                              B <: Tuple{Vararg{LineBasis{RealT}}}} <: CellBasis{RealT}
++    bases::B
++end
++
++function TensorProductCellBasis(bases::Tuple)
++    RealT = real(first(bases))
++    return TensorProductCellBasis{length(bases), RealT, typeof(bases)}(bases)
++end
++
++@inline index_ndims(::Type{<:TensorProductCellBasis{NDIMS}}) where {NDIMS} = NDIMS
++@inline Base.real(::TensorProductCellBasis{NDIMS, RealT}) where {NDIMS, RealT} = RealT
++@inline ndofs_per_element(basis::TensorProductCellBasis) = prod(nnodes, basis.bases)
++@inline eachnode(basis::TensorProductCellBasis) = CartesianIndices(map(nnodes,
++                                                                       basis.bases))
++end # @muladd
+diff --git a/src/solvers/fsbp/cell_basis_constructors.jl b/src/solvers/fsbp/cell_basis_constructors.jl
+new file mode 100644
+index 0000000..106369e
+--- /dev/null
++++ b/src/solvers/fsbp/cell_basis_constructors.jl
+@@ -0,0 +1,183 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++abstract type CellBasisConstructor{CellBasisT} end
++
++cell_basis_type(::Type{<:CellBasisConstructor{B}}) where {B} = B
++"""
++    build_cell_basis(constructor::CellBasisConstructor, pos, dx)
++
++Build the basis for one cell centered at `pos` with width `dx`.
++"""
++build_cell_basis(::CellBasisConstructor, pos, dx) = error("not implemented")
++
++@inline Base.real(::C) where {RealT, B <: CellBasis{RealT},
++C <: CellBasisConstructor{B}} = RealT
++
++struct LobattoLegendreCellBasisConstructor{RealT} <:
++       CellBasisConstructor{LobattoLikeCellBasis{RealT}}
++    """
++        calc_poly_degree(pos, dx)
++
++    Calculate the degree of the polynomial to be constructed at cell with position `pos`
++    and length `dx`.
++    """
++    calc_poly_degree::Function
++
++    function LobattoLegendreCellBasisConstructor{RealT}(calc_poly_degree) where {RealT <:
++                                                                                 Real}
++        new(calc_poly_degree)
++    end
++end
++
++function build_cell_basis(constructor::LobattoLegendreCellBasisConstructor{RealT},
++                          pos, dx) where {RealT <: Real}
++    polydeg = constructor.calc_poly_degree(pos, dx)
++    return LobattoLegendreCellBasis(polydeg, pos, dx)
++end
++
++"""
++    ReferenceCellBasisConstructor{RealT, CellBasisT}
++
++Wraps one fixed, precomputed reference-domain SBP operator (`D`, `x`, `w` on `domain`)
++and affinely maps it to each cell, rather than recomputing an operator per cell like
++`LobattoLegendreCellBasisConstructor` does.
++"""
++struct ReferenceCellBasisConstructor{RealT, CellBasisT <: CellBasis{RealT}} <:
++       CellBasisConstructor{CellBasisT}
++    D::Matrix{RealT}
++    x::Vector{RealT}
++    w::Vector{RealT}
++    calc_interpolation_matrix::Any
++    domain::Tuple{RealT, RealT}
++
++    function ReferenceCellBasisConstructor{RealT, CellBasisT}(D, x, w,
++                                                              calc_interpolation_matrix,
++                                                              domain::Tuple{RealT,
++                                                                            RealT}) where {
++                                                                                           RealT <:
++                                                                                           Real,
++                                                                                           CellBasisT <:
++                                                                                           CellBasis{RealT}
++                                                                                           }
++        @assert size(D, 1) == size(D, 2) == length(x) == length(w)
++        @assert domain[1] < domain[2]
++        new{RealT, CellBasisT}(Matrix{RealT}(D), Vector{RealT}(x), Vector{RealT}(w),
++                               calc_interpolation_matrix, domain)
++    end
++end
++
++# Shared helper: map reference-domain SBP operators to physical space for an element at
++# `pos` with width `dx`.  Works for any constructor with fields D, x, w,
++# calc_interpolation_matrix, domain.
++function _map_to_physical(constructor, pos, dx)
++    a, b = constructor.domain
++    scale = dx / (b - a)
++    mid_ref = (a + b) / 2
++    nodes = scale .* (constructor.x .- mid_ref) .+ pos
++    weights = scale .* constructor.w
++    D_phys = constructor.D ./ scale
++    phys_to_ref = nodes_out -> constructor.calc_interpolation_matrix((nodes_out .- pos) ./
++                                                                     scale .+ mid_ref)
++    return nodes, weights, D_phys, phys_to_ref
++end
++
++# The one place the two `CellBasis` families differ: how to build the final basis
++# from the mapped (nodes, weights, D_phys, interp) tuple.
++function _build_cell_basis(::Type{<:LobattoLikeCellBasis},
++                           nodes, weights, D_phys, interp, pos, dx)
++    LobattoLikeCellBasis(nodes, weights, D_phys, interp)
++end
++
++function _build_cell_basis(::Type{<:GeneralSBPCellBasis},
++                           nodes, weights, D_phys, interp, pos, dx)
++    RealT = eltype(nodes)
++    J = dx / 2
++    boundary_nodes = SVector{2, RealT}(pos - J, pos + J)
++    GeneralSBPCellBasis(nodes, boundary_nodes, weights, D_phys, interp)
++end
++
++function build_cell_basis(constructor::ReferenceCellBasisConstructor{RealT, CellBasisT},
++                          pos, dx) where {RealT <: Real, CellBasisT}
++    nodes, weights, D_phys, interp = _map_to_physical(constructor, pos, dx)
++    return _build_cell_basis(CellBasisT, nodes, weights, D_phys, interp, pos, dx)
++end
++
++struct MixedCellBasisConstructor{RealT, CellBasisT <: CellBasis{RealT},
++                                 Constructors <: NamedTuple} <:
++       CellBasisConstructor{CellBasisT}
++    constructors::Constructors
++    selector::Function
++
++    function MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(constructors::Constructors,
++                                                                        selector::Function) where {
++                                                                                                   RealT <:
++                                                                                                   Real,
++                                                                                                   CellBasisT <:
++                                                                                                   CellBasis{RealT},
++                                                                                                   Constructors <:
++                                                                                                   NamedTuple
++                                                                                                   }
++        for name in keys(constructors)
++            ctor = getfield(constructors, name)
++            @assert ctor isa CellBasisConstructor{<:CellBasis{RealT}} ||
++                    error("Constructor '$name' is $(typeof(ctor)), expected CellBasisConstructor{<:CellBasis{$RealT}}")
++        end
++        new{RealT, CellBasisT, Constructors}(constructors, selector)
++    end
++end
++
++function MixedCellBasisConstructor(constructors::Constructors,
++                                   selector::Function) where {Constructors <:
++                                                              NamedTuple}
++    CellBasisT = Union{map(ctor -> cell_basis_type(typeof(ctor)),
++                           Tuple(constructors))...}
++    RealT = real(first(constructors))
++    MixedCellBasisConstructor{RealT, CellBasisT, Constructors}(constructors, selector)
++end
++
++function build_cell_basis(c::MixedCellBasisConstructor, pos, dx)
++    chosen = c.selector(c.constructors, pos, dx)
++    return build_cell_basis(chosen, pos, dx)
++end
++
++"""
++    TensorProductCellBasisConstructor{NDIMS, Ctors, BasisT}
++
++Builds a `TensorProductCellBasis` from one 1D constructor per axis. `pos` and `dx` are
++indexed per axis (`pos[d]`, `dx[d]`), so cells need not be square.
++"""
++struct TensorProductCellBasisConstructor{NDIMS, Ctors <: Tuple,
++                                         BasisT <: CellBasis} <:
++       CellBasisConstructor{BasisT}
++    constructors::Ctors
++end
++
++function TensorProductCellBasisConstructor(constructors::Tuple)
++    RealT = real(first(constructors))
++    basis_types = map(c -> cell_basis_type(typeof(c)), constructors)
++    # Varying the basis across elements needs a `MixedCellBasisConstructor` *of* tensor
++    # constructors, not a tensor product of mixed ones. TODO: support that.
++    all(isconcretetype, basis_types) ||
++        error("tensor-product cell bases need one concrete basis type per axis")
++    BasisT = TensorProductCellBasis{length(constructors), RealT, Tuple{basis_types...}}
++    return TensorProductCellBasisConstructor{length(constructors), typeof(constructors),
++                                             BasisT}(constructors)
++end
++
++function build_cell_basis(c::TensorProductCellBasisConstructor{NDIMS}, pos,
++                          dx) where {NDIMS}
++    bases = ntuple(d -> build_cell_basis(c.constructors[d], pos[d], dx[d]), Val(NDIMS))
++    return TensorProductCellBasis(bases)
++end
++
++# Wrap a 1D constructor into an isotropic `NDIMS`-axis tensor product; leave a tensor one.
++as_tensor(c::TensorProductCellBasisConstructor, ::Val) = c
++function as_tensor(c::CellBasisConstructor, ::Val{NDIMS}) where {NDIMS}
++    return TensorProductCellBasisConstructor(ntuple(_ -> c, Val(NDIMS)))
++end
++end # @muladd
+diff --git a/src/solvers/fsbp/containers.jl b/src/solvers/fsbp/containers.jl
+new file mode 100644
+index 0000000..88729c4
+--- /dev/null
++++ b/src/solvers/fsbp/containers.jl
+@@ -0,0 +1,69 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++"""
++    WrappedArray{NDIMS, T, A, WA}
++
++A ragged (jagged) array: unlike a regular `Array`, each element can have its own
++node count per dimension. Backed by a single flat vector.
++
++Two ways to index: `u[v, i..., element]` for a single value (`v` = variable,
++`i...` = node position per dimension, `element` = which element), or `u[element]`
++for a view of that element's whole data, shaped `(nvars, nodes...)`.
++"""
++struct WrappedArray{NDIMS, T, A, WA}
++    nvars::Int
++    # Node count per dimension per element; need not be equal across dimensions.
++    num_nodes_in_element::Vector{NTuple{NDIMS, Int}}
++    # Start of each element in `a`: the running sum of nvars * prod(nnodes(bases[k])),
++    # beginning at 0.
++    offsets::Vector{Int}
++    a::A
++
++    function WrappedArray(::Val{NDIMS}, nvars, num_nodes_in_element, offsets,
++                          a::A) where {NDIMS, T, A <: AbstractVector{T}}
++        WA = Trixi.storage_type(a)
++        new{NDIMS, T, A, WA}(nvars, num_nodes_in_element, offsets, a)
++    end
++end
++
++Base.eltype(::WrappedArray{NDIMS, T, A, WA}) where {NDIMS, T, A, WA} = T
++
++trixi_backend(::WrappedArray) = nothing
++
++@inline function convert_index(a::WrappedArray, (i_vars, i_dims..., element))
++    LinearIndices((a.nvars, a.num_nodes_in_element[element]...))[i_vars, i_dims...] +
++    a.offsets[element]
++end
++
++function Base.getindex(a::WrappedArray{NDIMS, T, A, WA},
++                       element::Int) where {NDIMS, T, A <: AbstractVector{T}, WA}
++    o = a.offsets[element]
++    len = a.nvars * prod(a.num_nodes_in_element[element])
++    # stack-allocated view into this element's slice, shaped (nvars, nodes...)
++    reshape(view(a.a, (o + 1):(o + len)), (a.nvars, a.num_nodes_in_element[element]...))
++end
++
++function Base.getindex(a::WrappedArray{NDIMS, T, A, WA},
++                       idcs...) where {NDIMS, T,
++                                       A <: AbstractVector{T}, WA}
++    a.a[convert_index(a, idcs)]
++end
++
++function Base.getindex(a::WrappedArray{NDIMS, T, A, WA},
++                       ::EllipsisNotation.Ellipsis,
++                       element::Int) where {NDIMS, T,
++                                            A <: AbstractVector{T}, WA}
++    a[element]
++end
++
++function Base.setindex!(a::WrappedArray{NDIMS, T, A, WA}, x,
++                        idcs...) where {NDIMS, T,
++                                        A <: AbstractVector{T}, WA}
++    a.a[convert_index(a, idcs)] = x
++end
++end # @muladd
+diff --git a/src/solvers/fsbp/fsbp.jl b/src/solvers/fsbp/fsbp.jl
+new file mode 100644
+index 0000000..c07bce3
+--- /dev/null
++++ b/src/solvers/fsbp/fsbp.jl
+@@ -0,0 +1,75 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++include("containers.jl")
++
++abstract type FSBPBasis end
++
++include("cell_basis.jl")
++include("cell_basis_constructors.jl")
++
++"""
++    PerCellBasis{CellBasisConstructorT}
++
++Each cell of the mesh has its own CellBasis. Holds only the `local_basis_constructor`
++that builds the basis of each cell; everything else is delegated to the bases of the
++individual cells/elements.
++"""
++struct PerCellBasis{CellBasisConstructorT} <:
++       FSBPBasis
++    local_basis_constructor::CellBasisConstructorT
++end
++
++function PerCellBasis(local_basis_constructor::CellBasisConstructorT) where
++         {
++          CellBasisConstructorT <:
++          CellBasisConstructor
++          }
++    PerCellBasis{CellBasisConstructorT}(local_basis_constructor)
++end
++
++const DGFSBP = DG{Basis} where {Basis <: FSBPBasis}
++
++function DGFSBP(cell_basis_constructor;
++                basis = PerCellBasis(cell_basis_constructor),
++                surface_flux = flux_central,
++                surface_integral = SurfaceIntegralWeakForm(surface_flux),
++                volume_integral = VolumeIntegralFluxDifferencing(),
++                mortar = nothing)
++    return DG{typeof(basis), typeof(mortar), typeof(surface_integral),
++              typeof(volume_integral)}(basis, mortar, surface_integral, volume_integral)
++end
++
++@inline Base.real(::PerCellBasis{CellBasisConstructorT}) where {
++RealT,
++CellBasisT <: CellBasis{RealT},
++CellBasisConstructorT <: CellBasisConstructor{CellBasisT}
++} = RealT
++
++struct PerCellAnalyzer{RealT <: Real} <:
++       SolutionAnalyzer{RealT}
++    analysis_polydeg::Any
++end
++
++"""
++    SolutionAnalyzer(basis::PerCellBasis; analysis_polydeg = nothing)
++
++SolutionAnalyzer for spatially varying bases.
++
++- `analysis_polydeg == nothing`: no interpolation; compares the numerical solution to the
++  exact solution at the basis nodes.
++- `analysis_polydeg == n::Int`: evaluates the exact solution and interpolates the numerical
++  solution at n + 1 Gauss-Lobatto nodes per element and compares them there. 1D only; on a
++  2D mesh this errors.
++"""
++function SolutionAnalyzer(basis::PerCellBasis; analysis_polydeg = nothing)
++    RealT = real(basis)
++    return PerCellAnalyzer{RealT}(analysis_polydeg)
++end
++
++include("calc_volume_integral.jl")
++end # @muladd
+diff --git a/src/solvers/fsbp_tree/containers.jl b/src/solvers/fsbp_tree/containers.jl
+new file mode 100644
+index 0000000..5389c30
+--- /dev/null
++++ b/src/solvers/fsbp_tree/containers.jl
+@@ -0,0 +1,104 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++# `NDIMSP2` is `NDIMS + 2`, the rank of `surface_flux_values`; Julia cannot compute it
++# inside the type, so it is carried as a parameter (as in `P4estElementContainer`).
++struct TreeElementBasisContainer{NDIMS, RealT <: Real, uEltype <: Real, CellBasisT,
++                                 NDIMSP2} <: AbstractTreeElementContainer
++    bases::Vector{CellBasisT}                        # [elements]
++    nvars::Int
++    num_nodes_in_element::Vector{NTuple{NDIMS, Int}} # per axis, per element
++    offsets::Vector{Int}                             # element starts in the flat vector
++    # [variables, face node..., direction, elements]
++    surface_flux_values::Array{uEltype, NDIMSP2}
++    cell_ids::Vector{Int}                            # [elements]
++    _surface_flux_values::Vector{uEltype}             # internal `resize!`able storage
++end
++
++const TreeElementBasisContainer1D = TreeElementBasisContainer{1}
++const TreeElementBasisContainer2D = TreeElementBasisContainer{2}
++
++# `n_face_nodes` (max node count over all elements/axes) sizes the face dimensions of
++# `surface_flux_values`; in 1D there are none and it is ignored.
++function TreeElementBasisContainer{NDIMS, RealT, uEltype, CellBasisT}(bases, nvars,
++                                                                      num_nodes_in_element,
++                                                                      offsets, cell_ids,
++                                                                      n_face_nodes) where {
++                                                                                           NDIMS,
++                                                                                           RealT <:
++                                                                                           Real,
++                                                                                           uEltype <:
++                                                                                           Real,
++                                                                                           CellBasisT
++                                                                                           }
++    capacity = length(bases)
++    dims = (nvars, ntuple(_ -> n_face_nodes, Val(NDIMS - 1))..., 2 * NDIMS, capacity)
++
++    _surface_flux_values = fill(convert(uEltype, NaN), prod(dims))
++    surface_flux_values = unsafe_wrap(Array, pointer(_surface_flux_values), dims)
++
++    return TreeElementBasisContainer{NDIMS, RealT, uEltype, CellBasisT, NDIMS + 2}(bases,
++                                                                                   nvars,
++                                                                                   num_nodes_in_element,
++                                                                                   offsets,
++                                                                                   surface_flux_values,
++                                                                                   collect(Int,
++                                                                                           cell_ids),
++                                                                                   _surface_flux_values)
++end
++
++@inline Base.real(::TreeElementBasisContainer{NDIMS, RealT}) where {NDIMS,
++RealT} = RealT
++
++@inline nelements(elements::TreeElementBasisContainer) = length(elements.bases)
++
++"""
++    eachelement(elements::TreeElementBasisContainer)
++
++Return an iterator over the indices that specify the location in relevant data structures
++for the elements in `elements`.
++In particular, not the elements themselves are returned.
++"""
++@inline function eachelement(elements::TreeElementBasisContainer)
++    Base.OneTo(nelements(elements))
++end
++
++num_total_nodes(elements::TreeElementBasisContainer) = elements.offsets[end] ÷
++                                                       elements.nvars
++
++function wrap_array(u_ode::AbstractVector, mesh::AbstractMesh, equations,
++                    dg::DGFSBP, cache)
++    WrappedArray(Val(index_ndims(eltype(cache.elements.bases))), nvariables(equations),
++                 cache.elements.num_nodes_in_element,
++                 cache.elements.offsets, u_ode)
++end
++
++function allocate_coefficients(::AbstractMesh, equations, ::DGFSBP, cache)
++    # We must allocate a `Vector` in order to be able to `resize!` it (AMR).
++    # cf. wrap_array
++    u_ode = fill(zero(eltype(cache.elements)),
++                 nvariables(equations) * num_total_nodes(cache.elements))
++    return u_ode
++end
++
++# The generic `set_zero!` calls `du[.., element]`, which allocates a view per element.
++# Directly zeroing the flat backing vector avoids all allocations.
++# `trixi_backend(::WrappedArray)` is always `nothing`, so this covers every case.
++function set_zero!(::Nothing, du::WrappedArray, dg::DGFSBP, cache)
++    fill!(du.a, zero(eltype(du)))
++    return nothing
++end
++
++@inline nelements(mesh, dg::DGFSBP, cache) = nelements(cache.elements)
++@inline function ndofsglobal(mesh, dg::DGFSBP, cache)
++    num_total_nodes(cache.elements)
++end
++
++@inline function ndofs(mesh::MeshesDGSEM, dg::DGFSBP, cache)
++    num_total_nodes(cache.elements)
++end
++end # @muladd
+diff --git a/src/solvers/fsbp_tree/containers_1d.jl b/src/solvers/fsbp_tree/containers_1d.jl
+new file mode 100644
+index 0000000..dc4619a
+--- /dev/null
++++ b/src/solvers/fsbp_tree/containers_1d.jl
+@@ -0,0 +1,93 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++@inline eachnode(::DGFSBP, elements::TreeElementBasisContainer1D,
++element) = Base.OneTo(elements.num_nodes_in_element[element][1])
++@inline nnodes(::DGFSBP, elements::TreeElementBasisContainer1D,
++element) = elements.num_nodes_in_element[element][1]
++@inline nnodes(elements::TreeElementBasisContainer1D,
++element) = elements.num_nodes_in_element[element][1]
++
++# Create element container and initialize element data.
++function init_elements(cell_ids, mesh::TreeMesh1D,
++                       equations::AbstractEquations{1},
++                       basis::PerCellBasis,
++                       ::Type{RealT},
++                       ::Type{uEltype}) where {RealT <: Real, uEltype <: Real}
++    n_elements = length(cell_ids)
++    CellBasisT = cell_basis_type(typeof(basis.local_basis_constructor))
++
++    bases = Vector{CellBasisT}(undef, n_elements)
++    num_nodes_in_element = Vector{NTuple{1, Int}}(undef, n_elements)
++    offsets = Vector{Int}(undef, n_elements + 1)
++    offsets[1] = 0
++    n_vars = nvariables(equations)
++
++    for element in 1:n_elements
++        cell_id = cell_ids[element]
++        dx = length_at_cell(mesh.tree, cell_id)
++        cell_basis = build_cell_basis(basis.local_basis_constructor,
++                                      mesh.tree.coordinates[1, cell_id], dx)
++
++        bases[element] = cell_basis
++        num_nodes_in_element[element] = (nnodes(cell_basis),)
++        offsets[element + 1] = offsets[element] +
++                               n_vars * ndofs_per_element(cell_basis)
++    end
++
++    return TreeElementBasisContainer{1, RealT, uEltype, CellBasisT}(bases, n_vars,
++                                                                    num_nodes_in_element,
++                                                                    offsets, cell_ids,
++                                                                    1)
++end
++
++function init_interfaces(cell_ids, mesh::TreeMesh1D,
++                         elements::TreeElementBasisContainer1D)
++    n_interfaces = count_required_interfaces(mesh, cell_ids)
++    interfaces = TreeInterfaceContainer1D{eltype(elements)}(n_interfaces,
++                                                            nvariables(elements))
++    init_interfaces!(interfaces, elements, mesh)
++    return interfaces
++end
++
++function init_boundaries(cell_ids, mesh::TreeMesh1D,
++                         elements::TreeElementBasisContainer1D, basis)
++    n_boundaries = count_required_boundaries(mesh, cell_ids)
++    boundaries = TreeBoundaryContainer1D{real(elements), eltype(elements)}(n_boundaries,
++                                                                           nvariables(elements))
++    init_boundaries!(boundaries, elements, mesh, basis)
++    return boundaries
++end
++
++@inline function get_node_coords(elements::TreeElementBasisContainer1D, i, element)
++    SVector(get_nodes(elements.bases[element])[i])
++end
++
++@inline function get_node_coords(elements::TreeElementBasisContainer1D, equations,
++                                 solver::DG, indices...)
++    get_node_coords(elements, indices...)
++end
++
++@inline function boundary_node_coordinate(elements::TreeElementBasisContainer1D,
++                                          element,
++                                          direction)
++    basis = elements.bases[element]
++    if direction == 1
++        return SVector(boundary_coordinate(basis, Negative()))
++    else
++        return SVector(boundary_coordinate(basis, Positive()))
++    end
++end
++
++function calc_boundary_node_coordinates!(boundaries, element, count, direction,
++                                         elements::TreeElementBasisContainer1D,
++                                         mesh::TreeMesh1D, basis)
++    boundaries.node_coordinates[:, count] .= boundary_node_coordinate(elements, element,
++                                                                      direction)
++    return nothing
++end
++end # @muladd
+diff --git a/src/solvers/fsbp_tree/containers_2d.jl b/src/solvers/fsbp_tree/containers_2d.jl
+new file mode 100644
+index 0000000..518b20a
+--- /dev/null
++++ b/src/solvers/fsbp_tree/containers_2d.jl
+@@ -0,0 +1,123 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++# Create element container and initialize element data.
++function init_elements(cell_ids, mesh::TreeMesh2D,
++                       equations::AbstractEquations{2},
++                       basis::PerCellBasis,
++                       ::Type{RealT},
++                       ::Type{uEltype}) where {RealT <: Real, uEltype <: Real}
++    n_elements = length(cell_ids)
++    # One tensor-product basis per element; a bare 1D constructor is wrapped isotropically.
++    tensor_ctor = as_tensor(basis.local_basis_constructor, Val(2))
++    CellBasisT = cell_basis_type(typeof(tensor_ctor))
++
++    bases = Vector{CellBasisT}(undef, n_elements)
++    num_nodes_in_element = Vector{NTuple{2, Int}}(undef, n_elements)
++    offsets = Vector{Int}(undef, n_elements + 1)
++    offsets[1] = 0
++    n_vars = nvariables(equations)
++    n_face_nodes = 0
++
++    for element in 1:n_elements
++        cell_id = cell_ids[element]
++        dx = length_at_cell(mesh.tree, cell_id)
++        pos = view(mesh.tree.coordinates, :, cell_id)
++        # TreeMesh cells are square: identical width on both axes
++        tp = build_cell_basis(tensor_ctor, pos, (dx, dx))
++
++        bases[element] = tp
++        nn = map(nnodes, tp.bases)
++        num_nodes_in_element[element] = nn
++        offsets[element + 1] = offsets[element] + n_vars * ndofs_per_element(tp)
++        n_face_nodes = max(n_face_nodes, maximum(nn))
++    end
++
++    return TreeElementBasisContainer{2, RealT, uEltype, CellBasisT}(bases, n_vars,
++                                                                    num_nodes_in_element,
++                                                                    offsets, cell_ids,
++                                                                    n_face_nodes)
++end
++
++# Both sides of an interface are indexed with the left element's tangential basis.
++# TODO: lift by interpolating between the two tangential bases.
++function check_conforming_faces(interfaces, elements)
++    for interface in eachinterface(interfaces)
++        left_element = interfaces.neighbor_ids[1, interface]
++        right_element = interfaces.neighbor_ids[2, interface]
++        tangential = interfaces.orientations[interface] == 1 ? 2 : 1
++        b_l = elements.bases[left_element].bases[tangential]
++        b_r = elements.bases[right_element].bases[tangential]
++        h = boundary_coordinate(b_l, Positive()) - boundary_coordinate(b_l, Negative())
++        if nnodes(b_l) != nnodes(b_r) ||
++           !isapprox(get_nodes(b_l), get_nodes(b_r), atol = sqrt(eps(typeof(h))) * h)
++            error("DGFSBP on TreeMesh{2} requires conforming faces, but elements " *
++                  "$left_element and $right_element share an interface with " *
++                  "different tangential node counts or positions")
++        end
++    end
++    return nothing
++end
++
++# Reuse the DGSEM 2D interface/boundary containers; the face-node count is taken from
++# `surface_flux_values`.
++function init_interfaces(cell_ids, mesh::TreeMesh2D,
++                         elements::TreeElementBasisContainer2D)
++    n_interfaces = count_required_interfaces(mesh, cell_ids)
++    n_face_nodes = size(elements.surface_flux_values, 2)
++    interfaces = TreeInterfaceContainer2D{eltype(elements)}(n_interfaces,
++                                                            nvariables(elements),
++                                                            n_face_nodes)
++    init_interfaces!(interfaces, elements, mesh)
++    check_conforming_faces(interfaces, elements)
++    return interfaces
++end
++
++function init_boundaries(cell_ids, mesh::TreeMesh2D,
++                         elements::TreeElementBasisContainer2D, basis)
++    n_boundaries = count_required_boundaries(mesh, cell_ids)
++    n_face_nodes = size(elements.surface_flux_values, 2)
++    boundaries = TreeBoundaryContainer2D{real(elements), eltype(elements)}(n_boundaries,
++                                                                           nvariables(elements),
++                                                                           n_face_nodes)
++    init_boundaries!(boundaries, elements, mesh, basis)
++    return boundaries
++end
++
++@inline function get_node_coords(elements::TreeElementBasisContainer2D, i, j, element)
++    bx, by = elements.bases[element].bases
++    return SVector(get_nodes(bx)[i], get_nodes(by)[j])
++end
++
++@inline function get_node_coords(elements::TreeElementBasisContainer2D, equations,
++                                 solver::DG, indices...)
++    get_node_coords(elements, indices...)
++end
++
++# Boundary face nodes: normal axis pinned to the element boundary, tangential axis over its
++# nodes.
++function calc_boundary_node_coordinates!(boundaries, element, count, direction,
++                                         elements::TreeElementBasisContainer2D,
++                                         mesh::TreeMesh2D, basis)
++    bx, by = elements.bases[element].bases
++    bnd = boundaries.node_coordinates
++    if direction == 1 || direction == 2       # x-face: tangential runs over y
++        x = boundary_coordinate(bx, direction == 1 ? Negative() : Positive())
++        for j in eachnode(by)
++            bnd[1, j, count] = x
++            bnd[2, j, count] = get_nodes(by)[j]
++        end
++    else                                       # y-face: tangential runs over x
++        y = boundary_coordinate(by, direction == 3 ? Negative() : Positive())
++        for i in eachnode(bx)
++            bnd[1, i, count] = get_nodes(bx)[i]
++            bnd[2, i, count] = y
++        end
++    end
++    return nothing
++end
++end # @muladd
+diff --git a/src/solvers/fsbp_tree/fsbp.jl b/src/solvers/fsbp_tree/fsbp.jl
+new file mode 100644
+index 0000000..0f59749
+--- /dev/null
++++ b/src/solvers/fsbp_tree/fsbp.jl
+@@ -0,0 +1,13 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++include("containers.jl")
++include("containers_1d.jl")
++include("containers_2d.jl")
++include("fsbp_1d.jl")
++include("fsbp_2d.jl")
++end # @muladd
+diff --git a/src/solvers/fsbp_tree/fsbp_1d.jl b/src/solvers/fsbp_tree/fsbp_1d.jl
+new file mode 100644
+index 0000000..82824ec
+--- /dev/null
++++ b/src/solvers/fsbp_tree/fsbp_1d.jl
+@@ -0,0 +1,123 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++function prolong2interfaces!(cache, u, mesh::TreeMesh{1}, equations, dg::DGFSBP)
++    @unpack interfaces = cache
++    bases = cache.elements.bases
++
++    @threaded for interface in eachinterface(dg, cache)
++        left_element = interfaces.neighbor_ids[1, interface]
++        right_element = interfaces.neighbor_ids[2, interface]
++        boundary_value!(view(interfaces.u, 1, :, interface), u[left_element],
++                        bases[left_element], Positive())
++        boundary_value!(view(interfaces.u, 2, :, interface), u[right_element],
++                        bases[right_element], Negative())
++    end
++
++    return nothing
++end
++
++function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{1}, equations,
++                             dg::DGFSBP)
++    @unpack boundaries = cache
++    bases = cache.elements.bases
++
++    @threaded for boundary in eachboundary(dg, cache)
++        element = boundaries.neighbor_ids[boundary]
++        if boundaries.neighbor_sides[boundary] == 1
++            # element is in −x direction of boundary: extract from its +x (right) face
++            boundary_value!(view(boundaries.u, 1, :, boundary), u[element],
++                            bases[element], Positive())
++        else
++            # element is in +x direction of boundary: extract from its −x (left) face
++            boundary_value!(view(boundaries.u, 2, :, boundary), u[element],
++                            bases[element], Negative())
++        end
++    end
++
++    return nothing
++end
++
++@inline function weak_form_kernel!(du, u,
++                                   element, ::Type{<:TreeMesh{1}},
++                                   have_nonconservative_terms::False, equations,
++                                   dg::DGFSBP, cache, alpha = true)
++    basis = cache.elements.bases[element]
++    derivative_dhat = basis.derivative_dhat
++    u_element = u[element]
++    du_element = du[element]
++
++    for i in eachnode(basis)
++        u_node = get_node_vars(u_element, equations, dg, i)
++
++        flux1 = flux(u_node, 1, equations)
++        for ii in eachnode(basis)
++            multiply_add_to_node_vars!(du_element, alpha * derivative_dhat[ii, i],
++                                       flux1,
++                                       equations, dg, ii)
++        end
++    end
++
++    return nothing
++end
++
++@inline function flux_differencing_kernel!(du, u,
++                                           element,
++                                           ::Type{<:TreeMesh{1}},
++                                           have_nonconservative_terms::False, equations,
++                                           volume_flux, dg::DGFSBP, cache, alpha = true)
++    basis = cache.elements.bases[element]
++    derivative_split = basis.derivative_split
++    u_element = u[element]
++    du_element = du[element]
++
++    # Calculate volume integral in one element
++    for i in eachnode(basis)
++        u_node = get_node_vars(u_element, equations, dg, i)
++
++        # All diagonal entries of `derivative_split` are zero. Thus, we can skip
++        # the computation of the diagonal terms. In addition, we use the symmetry
++        # of the `volume_flux` to save half of the possible two-point flux
++        # computations.
++
++        # x direction
++        for ii in (i + 1):nnodes(basis)
++            u_node_ii = get_node_vars(u_element, equations, dg, ii)
++            flux1 = volume_flux(u_node, u_node_ii, 1, equations)
++            multiply_add_to_node_vars!(du_element, alpha * derivative_split[i, ii],
++                                       flux1,
++                                       equations, dg, i)
++            multiply_add_to_node_vars!(du_element, alpha * derivative_split[ii, i],
++                                       flux1,
++                                       equations, dg, ii)
++        end
++    end
++end
++
++function calc_surface_integral!(backend::Nothing, du, u, mesh::TreeMesh{1}, equations,
++                                surface_integral::SurfaceIntegralWeakForm, dg::DGFSBP,
++                                cache)
++    # Note that all fluxes have been computed with outward-pointing normal vectors.
++    @unpack surface_flux_values = cache.elements
++
++    @threaded for element in eachelement(dg, cache)
++        apply_surface_lift_line!(du[element],
++                                 view(surface_flux_values, :, 1, element),
++                                 view(surface_flux_values, :, 2, element),
++                                 cache.elements.bases[element], equations)
++    end
++
++    return nothing
++end
++
++function apply_jacobian!(backend::Nothing, du::WrappedArray, mesh::TreeMesh{1},
++                         equations, dg::DGFSBP, cache)
++    # FSBP absorbs the Jacobian into the weights; only the global minus sign remains.
++    du.a .*= -one(eltype(du))
++    return nothing
++end
++end # @muladd
+diff --git a/src/solvers/fsbp_tree/fsbp_2d.jl b/src/solvers/fsbp_tree/fsbp_2d.jl
+new file mode 100644
+index 0000000..bbea427
+--- /dev/null
++++ b/src/solvers/fsbp_tree/fsbp_2d.jl
+@@ -0,0 +1,334 @@
++# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
++# Since these FMAs can increase the performance of many numerical algorithms,
++# we need to opt-in explicitly.
++# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
++@muladd begin
++#! format: noindent
++
++@inline function weak_form_kernel!(du, u, element, ::Type{<:TreeMesh{2}},
++                                   have_nonconservative_terms::False, equations,
++                                   dg::DGFSBP, cache, alpha = true)
++    bx, by = cache.elements.bases[element].bases
++    uel = u[element]
++    duel = du[element]
++
++    for j in eachnode(by), i in eachnode(bx)
++        u_node = get_node_vars(uel, equations, dg, i, j)
++
++        flux1 = flux(u_node, 1, equations)
++        for ii in eachnode(bx)
++            multiply_add_to_node_vars!(duel, alpha * bx.derivative_dhat[ii, i], flux1,
++                                       equations, dg, ii, j)
++        end
++
++        flux2 = flux(u_node, 2, equations)
++        for jj in eachnode(by)
++            multiply_add_to_node_vars!(duel, alpha * by.derivative_dhat[jj, j], flux2,
++                                       equations, dg, i, jj)
++        end
++    end
++
++    return nothing
++end
++
++@inline function flux_differencing_kernel!(du, u, element, ::Type{<:TreeMesh{2}},
++                                           have_nonconservative_terms::False, equations,
++                                           volume_flux, dg::DGFSBP, cache, alpha = true)
++    bx, by = cache.elements.bases[element].bases
++    uel = u[element]
++    duel = du[element]
++
++    # The diagonal of `derivative_split` is zero (SBP), so it is skipped; volume-flux
++    # symmetry lets us halve the two-point flux evaluations.
++    for j in eachnode(by), i in eachnode(bx)
++        u_node = get_node_vars(uel, equations, dg, i, j)
++
++        # x direction
++        for ii in (i + 1):nnodes(bx)
++            u_node_ii = get_node_vars(uel, equations, dg, ii, j)
++            flux1 = volume_flux(u_node, u_node_ii, 1, equations)
++            multiply_add_to_node_vars!(duel, alpha * bx.derivative_split[i, ii], flux1,
++                                       equations, dg, i, j)
++            multiply_add_to_node_vars!(duel, alpha * bx.derivative_split[ii, i], flux1,
++                                       equations, dg, ii, j)
++        end
++
++        # y direction
++        for jj in (j + 1):nnodes(by)
++            u_node_jj = get_node_vars(uel, equations, dg, i, jj)
++            flux2 = volume_flux(u_node, u_node_jj, 2, equations)
++            multiply_add_to_node_vars!(duel, alpha * by.derivative_split[j, jj], flux2,
++                                       equations, dg, i, j)
++            multiply_add_to_node_vars!(duel, alpha * by.derivative_split[jj, j], flux2,
++                                       equations, dg, i, jj)
++        end
++    end
++
++    return nothing
++end
++
++function prolong2interfaces!(backend::Nothing, cache, u, mesh::TreeMesh{2}, equations,
++                             dg::DGFSBP)
++    @unpack interfaces = cache
++    @unpack orientations, neighbor_ids = interfaces
++    bases = cache.elements.bases
++
++    @threaded for interface in eachinterface(dg, cache)
++        left = neighbor_ids[1, interface]
++        right = neighbor_ids[2, interface]
++        u_left = u[left]
++        u_right = u[right]
++        bx_l, by_l = bases[left].bases
++        bx_r, by_r = bases[right].bases
++
++        # Faces are conforming (see `check_conforming_faces`): the left element's
++        # tangential basis indexes both sides.
++        if orientations[interface] == 1
++            # interface in x-direction: left +x face, right -x face; tangential index = y
++            for j in eachnode(by_l)
++                boundary_value!(view(interfaces.u, 1, :, j, interface),
++                                view(u_left, :, :, j), bx_l, Positive())
++                boundary_value!(view(interfaces.u, 2, :, j, interface),
++                                view(u_right, :, :, j), bx_r, Negative())
++            end
++        else
++            # interface in y-direction: left +y face, right -y face; tangential index = x
++            for i in eachnode(bx_l)
++                boundary_value!(view(interfaces.u, 1, :, i, interface),
++                                view(u_left, :, i, :), by_l, Positive())
++                boundary_value!(view(interfaces.u, 2, :, i, interface),
++                                view(u_right, :, i, :), by_r, Negative())
++            end
++        end
++    end
++
++    return nothing
++end
++
++function calc_interface_flux!(backend::Nothing, surface_flux_values, mesh::TreeMesh{2},
++                              have_nonconservative_terms::False, equations,
++                              surface_integral, dg::DGFSBP, cache)
++    @unpack surface_flux = surface_integral
++    @unpack u, neighbor_ids, orientations = cache.interfaces
++
++    @threaded for interface in eachinterface(dg, cache)
++        left_id = neighbor_ids[1, interface]
++        right_id = neighbor_ids[2, interface]
++
++        # orientation 1: left -> 2 (+x), right -> 1 (-x);
++        # orientation 2: left -> 4, right -> 3
++        left_direction = 2 * orientations[interface]
++        right_direction = 2 * orientations[interface] - 1
++
++        # tangential node count
++        bx_l, by_l = cache.elements.bases[left_id].bases
++        n_face = orientations[interface] == 1 ? nnodes(by_l) : nnodes(bx_l)
++        for i in 1:n_face
++            u_ll, u_rr = get_surface_node_vars(u, equations, dg, i, interface)
++            flux = surface_flux(u_ll, u_rr, orientations[interface], equations)
++            for v in eachvariable(equations)
++                surface_flux_values[v, i, left_direction, left_id] = flux[v]
++                surface_flux_values[v, i, right_direction, right_id] = flux[v]
++            end
++        end
++    end
++
++    return nothing
++end
++
++function calc_interface_flux!(backend::Nothing, surface_flux_values, mesh::TreeMesh{2},
++                              have_nonconservative_terms::True, equations,
++                              surface_integral, dg::DGFSBP, cache)
++    # TODO: nonconservative terms in 2D
++    return error("nonconservative terms are not implemented for DGFSBP on TreeMesh{2}")
++end
++
++function prolong2boundaries!(backend::Nothing, cache, u, mesh::TreeMesh{2}, equations,
++                             dg::DGFSBP)
++    @unpack boundaries = cache
++    @unpack orientations, neighbor_sides = boundaries
++    bases = cache.elements.bases
++
++    @threaded for boundary in eachboundary(dg, cache)
++        element = boundaries.neighbor_ids[boundary]
++        u_el = u[element]
++        bx, by = bases[element].bases
++
++        if orientations[boundary] == 1
++            if neighbor_sides[boundary] == 1
++                # element in -x direction of boundary: extract its +x face
++                for l in eachnode(by)
++                    boundary_value!(view(boundaries.u, 1, :, l, boundary),
++                                    view(u_el, :, :, l), bx, Positive())
++                end
++            else
++                # element in +x direction of boundary: extract its -x face
++                for l in eachnode(by)
++                    boundary_value!(view(boundaries.u, 2, :, l, boundary),
++                                    view(u_el, :, :, l), bx, Negative())
++                end
++            end
++        else
++            if neighbor_sides[boundary] == 1
++                # element in -y direction of boundary: extract its +y face
++                for l in eachnode(bx)
++                    boundary_value!(view(boundaries.u, 1, :, l, boundary),
++                                    view(u_el, :, l, :), by, Positive())
++                end
++            else
++                # element in +y direction of boundary: extract its -y face
++                for l in eachnode(bx)
++                    boundary_value!(view(boundaries.u, 2, :, l, boundary),
++                                    view(u_el, :, l, :), by, Negative())
++                end
++            end
++        end
++    end
++
++    return nothing
++end
++
++function calc_boundary_flux!(backend::Nothing, cache, t,
++                             boundary_conditions::NamedTuple, mesh::TreeMesh{2},
++                             equations, surface_integral, dg::DGFSBP)
++    @unpack surface_flux_values = cache.elements
++    @unpack n_boundaries_per_direction = cache.boundaries
++
++    lasts = accumulate(+, n_boundaries_per_direction)
++    firsts = lasts - n_boundaries_per_direction .+ 1
++
++    # Unrolled with literal indices so heterogeneous boundary conditions stay type-stable.
++    calc_boundary_flux_by_direction!(surface_flux_values, t, boundary_conditions[1],
++                                     have_nonconservative_terms(equations), equations,
++                                     surface_integral, dg, cache, 1, firsts[1],
++                                     lasts[1])
++    calc_boundary_flux_by_direction!(surface_flux_values, t, boundary_conditions[2],
++                                     have_nonconservative_terms(equations), equations,
++                                     surface_integral, dg, cache, 2, firsts[2],
++                                     lasts[2])
++    calc_boundary_flux_by_direction!(surface_flux_values, t, boundary_conditions[3],
++                                     have_nonconservative_terms(equations), equations,
++                                     surface_integral, dg, cache, 3, firsts[3],
++                                     lasts[3])
++    calc_boundary_flux_by_direction!(surface_flux_values, t, boundary_conditions[4],
++                                     have_nonconservative_terms(equations), equations,
++                                     surface_integral, dg, cache, 4, firsts[4],
++                                     lasts[4])
++
++    return nothing
++end
++
++function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:Any, 4},
++                                          t,
++                                          boundary_condition,
++                                          have_nonconservative_terms::False, equations,
++                                          surface_integral, dg::DGFSBP, cache,
++                                          direction, first_boundary, last_boundary)
++    @unpack surface_flux = surface_integral
++    @unpack u, neighbor_ids, neighbor_sides, node_coordinates,
++    orientations = cache.boundaries
++
++    @threaded for boundary in first_boundary:last_boundary
++        neighbor = neighbor_ids[boundary]
++        bx, by = cache.elements.bases[neighbor].bases
++        n_face = orientations[boundary] == 1 ? nnodes(by) : nnodes(bx)
++        for i in 1:n_face
++            u_ll, u_rr = get_surface_node_vars(u, equations, dg, i, boundary)
++            # `neighbor_sides == 1` -> element on the left, its state is the inner one
++            u_inner = neighbor_sides[boundary] == 1 ? u_ll : u_rr
++            x = get_node_coords(node_coordinates, equations, dg, i, boundary)
++            flux = boundary_condition(u_inner, orientations[boundary], direction, x, t,
++                                      surface_flux, equations)
++            for v in eachvariable(equations)
++                surface_flux_values[v, i, direction, neighbor] = flux[v]
++            end
++        end
++    end
++
++    return nothing
++end
++
++function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:Any, 4},
++                                          t,
++                                          boundary_condition,
++                                          have_nonconservative_terms::True, equations,
++                                          surface_integral, dg::DGFSBP, cache,
++                                          direction, first_boundary, last_boundary)
++    # TODO: nonconservative terms in 2D
++    return error("nonconservative terms are not implemented for DGFSBP on TreeMesh{2}")
++end
++
++function calc_surface_integral!(backend::Nothing, du, u, mesh::TreeMesh{2}, equations,
++                                surface_integral::SurfaceIntegralWeakForm, dg::DGFSBP,
++                                cache)
++    @unpack surface_flux_values = cache.elements
++
++    @threaded for element in eachelement(dg, cache)
++        bx, by = cache.elements.bases[element].bases
++        duel = du[element]
++
++        # x-faces (directions 1 = -x, 2 = +x): one lift per y-line
++        for l in eachnode(by)
++            apply_surface_lift_line!(view(duel, :, :, l),
++                                     view(surface_flux_values, :, l, 1, element),
++                                     view(surface_flux_values, :, l, 2, element),
++                                     bx, equations)
++        end
++
++        # y-faces (directions 3 = -y, 4 = +y): one lift per x-line
++        for l in eachnode(bx)
++            apply_surface_lift_line!(view(duel, :, l, :),
++                                     view(surface_flux_values, :, l, 3, element),
++                                     view(surface_flux_values, :, l, 4, element),
++                                     by, equations)
++        end
++    end
++
++    return nothing
++end
++
++function apply_jacobian!(backend::Nothing, du::WrappedArray, mesh::TreeMesh{2},
++                         equations,
++                         dg::DGFSBP, cache)
++    # FSBP absorbs the Jacobian into the weights; only the global minus sign remains.
++    du.a .*= -one(eltype(du))
++    return nothing
++end
++
++function calc_sources!(backend::Nothing, du, u, t, source_terms::Nothing,
++                       equations::AbstractEquations{2}, dg::DGFSBP, cache)
++    return nothing
++end
++
++function calc_sources!(backend::Nothing, du, u, t, source_terms,
++                       equations::AbstractEquations{2}, dg::DGFSBP, cache)
++    @threaded for element in eachelement(dg, cache)
++        uel = u[element]
++        duel = du[element]
++        bx, by = cache.elements.bases[element].bases
++        for j in eachnode(by), i in eachnode(bx)
++            u_local = get_node_vars(uel, equations, dg, i, j)
++            x_local = get_node_coords(cache.elements, i, j, element)
++            du_local = source_terms(u_local, x_local, t, equations)
++            add_to_node_vars!(duel, du_local, equations, dg, i, j)
++        end
++    end
++
++    return nothing
++end
++
++function compute_coefficients!(backend::Nothing, u, func, t, mesh::AbstractMesh{2},
++                               equations, dg::DGFSBP, cache)
++    @threaded for element in eachelement(dg, cache)
++        u_element = u[element]
++        bx, by = cache.elements.bases[element].bases
++        for j in eachnode(by), i in eachnode(bx)
++            x_node = get_node_coords(cache.elements, i, j, element)
++            u_node = func(x_node, t, equations)
++            set_node_vars!(u_element, u_node, equations, dg, i, j)
++        end
++    end
++
++    return nothing
++end
++end # @muladd
+diff --git a/src/time_integration/relaxation_methods/entropy_relaxation.jl b/src/time_integration/relaxation_methods/entropy_relaxation.jl
+index 0976ae1..5ade69c 100644
+--- a/src/time_integration/relaxation_methods/entropy_relaxation.jl
++++ b/src/time_integration/relaxation_methods/entropy_relaxation.jl
+@@ -7,7 +7,8 @@
+ 
+ @inline function integrate_w_dot_stage(stage, u_stage,
+                                        mesh::Union{TreeMesh{1}, StructuredMesh{1}},
+-                                       equations, dg::Union{DGSEM, FDSBP}, cache)
++                                       equations, dg::Union{DGSEM, FDSBP, DGFSBP},
++                                       cache)
+     @trixi_timeit timer() "Integrate w ⋅ k" begin
+         # Calculate ∫(∂S/∂u ⋅ k)dΩ = ∫(w ⋅ k)dΩ
+         integrate_via_indices(u_stage, mesh, equations, dg, cache,
+@@ -25,7 +26,8 @@ end
+                                        mesh::Union{TreeMesh{2}, StructuredMesh{2},
+                                                    UnstructuredMesh2D, P4estMesh{2},
+                                                    T8codeMesh{2}},
+-                                       equations, dg::Union{DGSEM, FDSBP}, cache)
++                                       equations, dg::Union{DGSEM, FDSBP, DGFSBP},
++                                       cache)
+     @trixi_timeit timer() "Integrate w ⋅ k" begin
+         # Calculate ∫(∂S/∂u ⋅ k)dΩ = ∫(w ⋅ k)dΩ
+         integrate_via_indices(u_stage, mesh, equations, dg, cache,
+diff --git a/src/visualization/types.jl b/src/visualization/types.jl
+index 5c6e9ba..fc00895 100644
+--- a/src/visualization/types.jl
++++ b/src/visualization/types.jl
+@@ -224,6 +224,20 @@ function PlotData2D(u_ode, semi; kwargs...)
+                       kwargs...)
+ end
+ 
++# FSBP has no uniform node count, so wrap ragged (`wrap_array`), not `wrap_array_native`.
++function PlotData2D(u_ode::AbstractVector,
++                    semi::SemidiscretizationHyperbolic{Mesh, Equations,
++                                                       InitialCondition,
++                                                       BoundaryConditions, SourceTerms,
++                                                       Solver, Cache};
++                    kwargs...) where {Solver <: DGFSBP, Mesh, Equations,
++                                      InitialCondition,
++                                      BoundaryConditions, SourceTerms, Cache}
++    return PlotData2D(wrap_array(u_ode, semi),
++                      mesh_equations_solver_cache(semi)...;
++                      kwargs...)
++end
++
+ function PlotData2D(u_ode, semi::SemidiscretizationCoupled; kwargs...)
+     plot_data_array = []
+     @unpack semis = semi
+@@ -282,7 +296,8 @@ function PlotData2DCartesian(u, mesh::TreeMesh, equations, solver, cache;
+                                                                coordinates, levels,
+                                                                ndims(mesh),
+                                                                unstructured_data,
+-                                                               nnodes(solver),
++                                                               size(unstructured_data,
++                                                                    1),
+                                                                grid_lines,
+                                                                max_supported_level,
+                                                                nvisnodes,
+@@ -740,18 +755,20 @@ function PlotData1D(u, mesh::TreeMesh1D, equations, solver::BlockFV, cache;
+ end
+ 
+ # unwrap u if it is VectorOfArray
+-PlotData1D(u::VectorOfArray, mesh, equations, dg::DGMulti{1}, cache; kwargs...) = PlotData1D(parent(u),
+-                                                                                             mesh,
+-                                                                                             equations,
+-                                                                                             dg,
+-                                                                                             cache;
+-                                                                                             kwargs...)
+-PlotData2D(u::VectorOfArray, mesh, equations, dg::DGMulti{2}, cache; kwargs...) = PlotData2D(parent(u),
+-                                                                                             mesh,
+-                                                                                             equations,
+-                                                                                             dg,
+-                                                                                             cache;
+-                                                                                             kwargs...)
++PlotData1D(u::VectorOfArray, mesh, equations, dg::DGMulti{1}, cache;
++kwargs...) = PlotData1D(parent(u),
++                        mesh,
++                        equations,
++                        dg,
++                        cache;
++                        kwargs...)
++PlotData2D(u::VectorOfArray, mesh, equations, dg::DGMulti{2}, cache;
++kwargs...) = PlotData2D(parent(u),
++                        mesh,
++                        equations,
++                        dg,
++                        cache;
++                        kwargs...)
+ 
+ function PlotData1D(u, mesh, equations, solver, cache;
+                     solution_variables = nothing, nvisnodes = nothing,
+@@ -888,4 +905,77 @@ function PlotData1D(cb::DiscreteCallback{<:Any, <:TimeSeriesCallback},
+                     point_id::Integer)
+     return PlotData1D(cb.affect!, point_id)
+ end
++
++function PlotData1D(u_ode::AbstractVector,
++                    semi::SemidiscretizationHyperbolic{Mesh, Equations,
++                                                       InitialCondition,
++                                                       BoundaryConditions,
++                                                       SourceTerms, Solver, Cache};
++                    kwargs...) where {Solver <: DGFSBP, Mesh, Equations,
++                                      InitialCondition, BoundaryConditions, SourceTerms,
++                                      Cache}
++    PlotData1D(wrap_array(u_ode, semi),
++               mesh_equations_solver_cache(semi)...;
++               kwargs...)
++end
++
++function PlotData1D(u::WrappedArray, mesh::TreeMesh, equations, solver::DGFSBP, cache;
++                    solution_variables = nothing, nvisnodes = nothing,
++                    reinterpolate = default_reinterpolate(solver),
++                    slice = :x, point = (0.0, 0.0, 0.0), curve = nothing,
++                    variable_names = nothing)
++    solution_variables_ = digest_solution_variables(equations, solution_variables)
++    variable_names_ = digest_variable_names(solution_variables_, equations,
++                                            variable_names)
++
++    orientation_x = 0 # Set 'orientation' to zero on default.
++
++    if ndims(mesh) == 1
++        x, data, mesh_vertices_x = get_data_1d(u, mesh.tree, cache.elements, nvisnodes,
++                                               reinterpolate, solution_variables_,
++                                               equations)
++        orientation_x = 1
++
++    else
++        error("Not implemented")
++    end
++
++    return PlotData1D(x, data, variable_names_, mesh_vertices_x,
++                      orientation_x)
++end
++
++# Evaluate `func` at every node into a ragged `WrappedArray`, then reuse the solution-data
++# method.
++function PlotData1D(func::Function, mesh::TreeMesh, equations, solver::DGFSBP, cache;
++                    kwargs...)
++    elements = cache.elements
++
++    # `func`'s output length sets the component count; it need not equal
++    # `nvariables(equations)`.
++    node_vars_1 = func(get_node_coords(elements, 1, 1), equations)
++    n_vars = length(node_vars_1)
++
++    # Recompute offsets: the cache's offsets assume `nvariables(equations)` components, not
++    # `n_vars`.
++    num_nodes_in_element = elements.num_nodes_in_element
++    offsets = Vector{Int}(undef, nelements(elements) + 1)
++    offsets[1] = 0
++    for e in eachelement(elements)
++        offsets[e + 1] = offsets[e] + n_vars * nnodes(elements, e)
++    end
++
++    a = Vector{eltype(node_vars_1)}(undef, offsets[end])
++    u = WrappedArray(Val(1), n_vars, num_nodes_in_element, offsets, a)
++
++    for e in eachelement(elements)
++        for i in 1:nnodes(elements, e)
++            node_vars = func(get_node_coords(elements, i, e), equations)
++            for v in 1:n_vars
++                u[v, i, e] = node_vars[v]
++            end
++        end
++    end
++
++    return PlotData1D(u, mesh, equations, solver, cache; kwargs...)
++end
+ end # @muladd
+diff --git a/src/visualization/utilities.jl b/src/visualization/utilities.jl
+index 502afdc..6752538 100644
+--- a/src/visualization/utilities.jl
++++ b/src/visualization/utilities.jl
+@@ -284,8 +284,9 @@ function digest_solution_variables(equations, solution_variables::Nothing)
+ end
+ 
+ digest_variable_names(solution_variables_, equations, variable_names) = variable_names
+-digest_variable_names(solution_variables_, equations, ::Nothing) = SVector(varnames(solution_variables_,
+-                                                                                    equations))
++digest_variable_names(solution_variables_, equations,
++::Nothing) = SVector(varnames(solution_variables_,
++                              equations))
+ 
+ """
+     adapt_to_mesh_level!(u_ode, semi, level)
+@@ -483,6 +484,78 @@ function get_data_1d(original_nodes, unstructured_data, nvisnodes, reinterpolate
+            vcat(original_nodes[1, 1, :], original_nodes[1, end, end])
+ end
+ 
++function get_data_1d(u::WrappedArray, tree, elements, nvisnodes, reinterpolate,
++                     solution_variables, equations)
++    RealT = eltype(get_node_coords(elements, 1, 1))
++    n_elements = nelements(elements)
++    n_vars_in = size(u[1], 1)
++    # `solution_variables` sets the output column count
++    u_sample = SVector{n_vars_in}(ntuple(j -> u[j, 1, 1], n_vars_in))
++    n_vars_out = length(solution_variables(u_sample, equations))
++    mesh_vertices_x = Vector{RealT}(undef, n_elements + 1)
++    for (i, e) in enumerate(eachelement(elements))
++        cell_id = elements.cell_ids[e]
++        dx2 = length_at_cell(tree, cell_id) / 2
++        p = cell_coordinates(tree, cell_id)[1]
++        mesh_vertices_x[i + 1] = p + dx2
++        if i == 1
++            mesh_vertices_x[1] = p - dx2
++        end
++    end
++
++    if reinterpolate
++        n_total_nodes = num_total_nodes(elements)
++
++        nvisnodes_for_element = if isnothing(nvisnodes)
++            n_total_nodes *= 2
++            n -> 2 * n          # 2× oversampling, scales with element degree
++        elseif nvisnodes == 0
++            # we add an extra node to fvm elements for visualization
++            n_total_nodes += count(==(1), (nnodes(b) for b in elements.bases))
++            n -> max(n, 2)              # same count, maps GL nodes → equidistant
++        else
++            @assert nvisnodes>=2 "nvisnodes must be zero or >= 2"
++            n_total_nodes = nelements(elements) * nvisnodes
++            _ -> nvisnodes      # fixed global count, same for all elements
++        end
++
++        nodes = Vector{RealT}(undef, n_total_nodes)
++        data = Array{eltype(elements), 2}(undef, n_total_nodes, n_vars_out)
++
++        n = 1
++        for (e, x0, x1) in zip(eachelement(elements), mesh_vertices_x,
++                               mesh_vertices_x[2:end])
++            nvis = nvisnodes_for_element(nnodes(elements, e))
++            nvis_nodes = range(x0, x1, length = nvis)
++            nodes[n:(n + nvis - 1)] .= nvis_nodes
++
++            basis = elements.bases[e]
++            V = interpolation_matrix(basis, nvis_nodes)
++            u_interp = V * u[e]'
++            for i in 1:nvis
++                u_node = SVector{n_vars_in}(ntuple(j -> u_interp[i, j], n_vars_in))
++                data[n + i - 1, :] .= solution_variables(u_node, equations)
++            end
++            n += nvis
++        end
++        nodes, data, mesh_vertices_x
++    else
++        n_total_nodes = num_total_nodes(elements)
++        nodes = Vector{RealT}(undef, n_total_nodes)
++        data = Array{eltype(elements), 2}(undef, n_total_nodes, n_vars_out)
++        n = 1
++        for e in eachelement(elements)
++            for i in 1:nnodes(elements, e)
++                nodes[n] = get_node_coords(elements, i, e)[1]
++                u_node = SVector{n_vars_in}(ntuple(j -> u[j, i, e], n_vars_in))
++                data[n, :] .= solution_variables(u_node, equations)
++                n += 1
++            end
++        end
++        nodes, data, mesh_vertices_x
++    end
++end
++
+ # Change order of dimensions (variables are now last) and convert data to `solution_variables`
+ #
+ # Note: This is a low-level function that is not considered as part of Trixi.jl's interface and may
+@@ -519,6 +592,46 @@ function get_unstructured_data(u, solution_variables, mesh, equations, solver, c
+     return unstructured_data
+ end
+ 
++# Resample ragged FSBP elements onto a common N×N Gauss-Lobatto grid so `get_data_2d`
++# applies.
++function get_unstructured_data(u::WrappedArray, solution_variables, mesh::TreeMesh{2},
++                               equations, solver::DGFSBP, cache)
++    elements = cache.elements
++    N = maximum(max(nx, ny) for (nx, ny) in elements.num_nodes_in_element)
++    lobatto, _ = gauss_lobatto_nodes_weights(N)
++
++    n_vars = length(solution_variables(get_node_vars(u[1], equations, solver, 1, 1),
++                                       equations))
++    data = Array{eltype(elements)}(undef, N, N, nelements(elements), n_vars)
++
++    for element in eachelement(elements)
++        bx, by = elements.bases[element].bases
++        uel = u[element]
++        nx, ny = elements.num_nodes_in_element[element]
++
++        xl, xr = boundary_coordinate(bx, Negative()),
++                 boundary_coordinate(bx, Positive())
++        yl, yr = boundary_coordinate(by, Negative()),
++                 boundary_coordinate(by, Positive())
++        Vx = interpolation_matrix(bx,
++                                  @. 0.5 * ((1 - lobatto) * xl + (1 + lobatto) * xr))
++        Vy = interpolation_matrix(by,
++                                  @. 0.5 * ((1 - lobatto) * yl + (1 + lobatto) * yr))
++
++        raw = Array{eltype(elements)}(undef, n_vars, nx, ny)
++        for j in 1:ny, i in 1:nx
++            raw[:, i, j] .= solution_variables(get_node_vars(uel, equations, solver, i,
++                                                             j),
++                                               equations)
++        end
++        for v in 1:n_vars
++            @views data[:, :, element, v] .= Vx * raw[v, :, :] * Vy'
++        end
++    end
++
++    return data
++end
++
+ # This method is only for plotting 1D functions
+ function get_unstructured_data(func::Function, solution_variables,
+                                mesh::AbstractMesh{1}, equations, solver, cache)
+@@ -777,10 +890,11 @@ function unstructured_2d_to_1d(original_nodes, unstructured_data, nvisnodes,
+         # Interpolate to each node of new 1D element.
+         for v in 1:n_variables
+             for node in 1:n_nodes_in
+-                new_unstructured_data[node, new_id, v] = (vandermonde * unstructured_data[node,
+-                                                                                          :,
+-                                                                                          element_id,
+-                                                                                          v])[1]
++                new_unstructured_data[node, new_id,
++                v] = (vandermonde * unstructured_data[node,
++                                                      :,
++                                                      element_id,
++                                                      v])[1]
+             end
+         end
+ 
+@@ -1370,16 +1484,18 @@ function unstructured_3d_to_1d(original_nodes, unstructured_data, nvisnodes,
+         for v in 1:n_variables
+             for i in 1:n_nodes_in
+                 for ii in 1:n_nodes_in
+-                    temp_unstructured_data[i, ii, new_id, v] = (vandermonde_ii * unstructured_data[ii,
+-                                                                                                   :,
+-                                                                                                   i,
+-                                                                                                   element_id,
+-                                                                                                   v])[1]
++                    temp_unstructured_data[i, ii, new_id,
++                    v] = (vandermonde_ii * unstructured_data[ii,
++                                                             :,
++                                                             i,
++                                                             element_id,
++                                                             v])[1]
+                 end
+-                new_unstructured_data[i, new_id, v] = (vandermonde_i * temp_unstructured_data[i,
+-                                                                                              :,
+-                                                                                              new_id,
+-                                                                                              v])[1]
++                new_unstructured_data[i, new_id,
++                v] = (vandermonde_i * temp_unstructured_data[i,
++                                                             :,
++                                                             new_id,
++                                                             v])[1]
+             end
+         end
+ 
+@@ -1440,13 +1556,14 @@ function unstructured2structured(unstructured_data, normalized_coordinates,
+ 
+             # Interpolate data
+             vandermonde = vandermonde_per_level[level + 1]
+-            structured[v][first[1]:last[1], first[2]:last[2]] .= (reshape(multiply_dimensionwise(vandermonde,
+-                                                                                                 reshaped_data[:,
+-                                                                                                               :,
+-                                                                                                               :,
+-                                                                                                               element_id]),
+-                                                                          n_nodes_out,
+-                                                                          n_nodes_out))
++            structured[v][first[1]:last[1],
++            first[2]:last[2]] .= (reshape(multiply_dimensionwise(vandermonde,
++                                                                 reshaped_data[:,
++                                                                               :,
++                                                                               :,
++                                                                               element_id]),
++                                          n_nodes_out,
++                                          n_nodes_out))
+         end
+     end
+ 
+diff --git a/test/test_tree_1d_advection_fsbp.jl b/test/test_tree_1d_advection_fsbp.jl
+new file mode 100644
+index 0000000..ea42a76
+--- /dev/null
++++ b/test/test_tree_1d_advection_fsbp.jl
+@@ -0,0 +1,18 @@
++@testsnippet TreeMesh1DAdvectionFSBP begin
++    EXAMPLES_DIR = joinpath(examples_dir(), "tree_1d_fsbp")
++end
++
++@testitem "TreeMesh1D Advection FSBP: elixir_advection_boundary_layer.jl" setup=[
++    Setup,
++    TreeMesh1DAdvectionFSBP
++] tags=[:tree_part1] begin
++    # l2/linf look large in absolute terms, but the exact solution itself spans
++    # 1.0 to exp(2*pi) ~ 535.5 on this domain; the relative error is ~0.5%.
++    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_advection_boundary_layer.jl"),
++                        l2=[0.5180527023144795],
++                        linf=[2.625579703349274])
++
++    # LinearScalarAdvectionEquation1D has a constant wave speed, so this elixir
++    # exercises the constant_speed::True branch of max_dt for DGFSBP.
++    @test Trixi.have_constant_speed(equations) === Trixi.True()
++end
+diff --git a/test/test_tree_1d_burgers_fsbp.jl b/test/test_tree_1d_burgers_fsbp.jl
+new file mode 100644
+index 0000000..4a6c6eb
+--- /dev/null
++++ b/test/test_tree_1d_burgers_fsbp.jl
+@@ -0,0 +1,176 @@
++@testsnippet TreeMesh1DBurgersFSBP begin
++    EXAMPLES_DIR = examples_dir()
++end
++
++@testitem "TreeMesh1D Burgers FSBP: FSBP vs DGSEM comparison" setup=[
++    Setup,
++    TreeMesh1DBurgersFSBP
++] tags=[:tree_part1] begin
++    using LinearAlgebra: norm
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_dgsem",
++                           "elixir_burgers_linear_stability.jl"),
++                  tspan = (0.0, 0.5))
++
++    # get solution vector at 0.5
++    u_dgsem = copy(sol.u[end])
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
++                           "elixir_burgers_linear_stability.jl"),
++                  tspan = (0.0, 0.5))
++
++    # get solution vector at 0.5
++    u_fsbp = copy(sol.u[end])
++
++    # apart from floating point inaccuracies the results should be equal
++    @test norm(u_fsbp - u_dgsem, Inf) < 1e-12
++end
++
++@testitem "TreeMesh1D Burgers FSBP: DGFSBP weak form vs DGSEM" setup=[
++    Setup,
++    TreeMesh1DBurgersFSBP
++] tags=[:tree_part1] begin
++    using LinearAlgebra: norm
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
++                  tspan = (0.0, 0.5), analysis_polydeg = 6,
++                  solver = DGSEM(polydeg = 3, surface_flux = flux_lax_friedrichs))
++    u_dgsem = copy(sol.u[end])
++
++    polydeg = 3
++    solver_lobatto_like = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> polydeg);
++                                 surface_flux = flux_lax_friedrichs,
++                                 volume_integral = VolumeIntegralWeakForm())
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
++                  tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_lobatto_like)
++    u_lobatto_like = copy(sol.u[end])
++
++    @test norm(u_lobatto_like - u_dgsem, Inf) < 1e-12
++end
++
++@testitem "TreeMesh1D Burgers FSBP: GeneralSBPCellBasis (weak form) vs DGSEM" setup=[
++    Setup,
++    TreeMesh1DBurgersFSBP
++] tags=[:tree_part1] begin
++    using LinearAlgebra: norm
++
++    # All runs use the same FSBP elixir; only the solver differs.
++    # DGSEM with polydeg=3 and VolumeIntegralWeakForm is the reference.
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
++                  tspan = (0.0, 0.5), analysis_polydeg = 6,
++                  solver = DGSEM(polydeg = 3, surface_flux = flux_lax_friedrichs))
++    u_dgsem = copy(sol.u[end])
++
++    polydeg = 3
++    nodes_ref, weights_ref = Trixi.gauss_lobatto_nodes_weights(polydeg + 1)
++    D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
++    calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
++    general_ctor = ReferenceCellBasisConstructor{Float64,
++                                                 Trixi.GeneralSBPCellBasis{Float64}}(D_ref,
++                                                                                     nodes_ref,
++                                                                                     weights_ref,
++                                                                                     calc_interp,
++                                                                                     (-1.0,
++                                                                                      1.0))
++    solver_general = DGFSBP(general_ctor;
++                            surface_flux = flux_lax_friedrichs,
++                            volume_integral = VolumeIntegralWeakForm())
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
++                  tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_general)
++    u_general_sbp = copy(sol.u[end])
++
++    solver_lobatto_like = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> polydeg);
++                                 surface_flux = flux_lax_friedrichs,
++                                 volume_integral = VolumeIntegralWeakForm())
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
++                  tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_lobatto_like)
++    u_lobatto_like = copy(sol.u[end])
++
++    @test norm(u_general_sbp - u_dgsem, Inf) < 1e-12
++    @test norm(u_lobatto_like - u_dgsem, Inf) < 1e-12
++end
++
++@testitem "TreeMesh1D Burgers FSBP: GeneralSBPCellBasis with interior-only nodes" setup=[
++    Setup,
++    TreeMesh1DBurgersFSBP
++] tags=[:tree_part1] begin
++    polydeg = 3
++    nodes_ref, weights_ref = Trixi.gauss_nodes_weights(polydeg + 1)
++    D_ref = Trixi.polynomial_derivative_matrix(nodes_ref)
++    calc_interp = nodes_out -> Trixi.polynomial_interpolation_matrix(nodes_ref, nodes_out)
++    general_ctor = ReferenceCellBasisConstructor{Float64,
++                                                 Trixi.GeneralSBPCellBasis{Float64}}(D_ref,
++                                                                                     nodes_ref,
++                                                                                     weights_ref,
++                                                                                     calc_interp,
++                                                                                     (-1.0,
++                                                                                      1.0))
++    solver_general = DGFSBP(general_ctor;
++                            surface_flux = flux_lax_friedrichs,
++                            volume_integral = VolumeIntegralWeakForm())
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
++                  tspan = (0.0, 0.5), analysis_polydeg = 6, solver = solver_general)
++    l2, linf = analysis_callback(sol)
++
++    @test l2 ≈ [5.0339303969769965e-6]
++    @test linf ≈ [2.7951089267563844e-5]
++end
++
++@testitem "TreeMesh1D Burgers FSBP: elixir_burgers_mixed_basis.jl" setup=[
++    Setup,
++    TreeMesh1DBurgersFSBP
++] tags=[:tree_part1] begin
++    @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
++                                 "elixir_burgers_mixed_basis.jl"),
++                        l2=[2.30231081502973e-5],
++                        linf=[0.00012822591919103843])
++
++    # Verify the mesh actually mixed both basis families, not just one.
++    elements = semi.cache.elements
++    n_lobatto = count(b -> b isa Trixi.LobattoLikeCellBasis, elements.bases)
++    n_general = count(b -> b isa Trixi.GeneralSBPCellBasis, elements.bases)
++    @test n_lobatto == 8
++    @test n_general == 8
++end
++
++@testitem "TreeMesh1D Burgers FSBP: elixir_burgers_basic.jl with periodicity=false" setup=[
++    Setup,
++    TreeMesh1DBurgersFSBP
++] tags=[:tree_part1] begin
++    @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
++                        periodicity=false,
++                        boundary_conditions=BoundaryConditionDirichlet(initial_condition_convergence_test),
++                        l2=[3.671547447293672e-5],
++                        linf=[0.0001619006414712576])
++end
++
++@testitem "TreeMesh1D Burgers FSBP: elixir_burgers_basic.jl: error norms match DGSEM (analysis_polydeg=6)" setup=[
++    Setup,
++    TreeMesh1DBurgersFSBP
++] tags=[:tree_part1] begin
++    @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp", "elixir_burgers_basic.jl"),
++                        analysis_polydeg=6,
++                        l2=[2.967470209082194e-5],
++                        linf=[0.00016152468882624227])
++
++    # analysis_polydeg=6 matches DGSEM's own default (2 * polydeg); at that degree
++    # the FSBP and DGSEM error norms should agree, not just this fixed reference.
++    l2_fsbp, linf_fsbp = analysis_callback(sol)
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_1d_dgsem", "elixir_burgers_basic.jl"))
++    l2_dgsem, linf_dgsem = analysis_callback(sol)
++
++    @test l2_fsbp ≈ l2_dgsem
++    @test linf_fsbp ≈ linf_dgsem
++end
+diff --git a/test/test_tree_1d_euler_fsbp.jl b/test/test_tree_1d_euler_fsbp.jl
+new file mode 100644
+index 0000000..62475e9
+--- /dev/null
++++ b/test/test_tree_1d_euler_fsbp.jl
+@@ -0,0 +1,96 @@
++@testsnippet TreeMesh1DEulerFSBP begin
++    EXAMPLES_DIR = joinpath(examples_dir(), "tree_1d_fsbp")
++end
++
++@testitem "TreeMesh1D Euler FSBP: elixir_euler_ec.jl" setup=[
++    Setup,
++    TreeMesh1DEulerFSBP
++] tags=[:tree_part1] begin
++    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_ec.jl"),
++                        analysis_polydeg=6,
++                        l2=[
++                            0.11821957357197649,
++                            0.15330089521538678,
++                            0.4417674632047301
++                        ],
++                        linf=[
++                            0.24280567569982958,
++                            0.29130548795961936,
++                            0.8847009003152442
++                        ])
++
++    # Ensure that we do not have excessive memory allocations
++    # (e.g., from type instabilities)
++    @test_allocations(Trixi.rhs!, semi, sol, 1000)
++end
++
++@testitem "TreeMesh1D Euler FSBP: elixir_euler_ec_variable_polynomial_degree.jl" setup=[
++    Setup,
++    TreeMesh1DEulerFSBP
++] tags=[:tree_part1] begin
++    @test_trixi_include(joinpath(EXAMPLES_DIR,
++                                 "elixir_euler_ec_variable_polynomial_degree.jl"),
++                        analysis_polydeg=6,
++                        l2=[
++                            0.11275325749312189,
++                            0.15918993256736444,
++                            0.4201116027038316
++                        ],
++                        linf=[
++                            0.22193426272973626,
++                            0.36131357156817606,
++                            0.8446163262347817
++                        ])
++
++    # Ensure that we do not have excessive memory allocations
++    # (e.g., from type instabilities)
++    @test_allocations(Trixi.rhs!, semi, sol, 1000)
++end
++
++@testitem "TreeMesh1D Euler FSBP: elixir_euler_ec_er.jl" setup=[
++    Setup,
++    TreeMesh1DEulerFSBP
++] tags=[:tree_part1] begin
++    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_ec_er.jl"),
++                        l2=[
++                            0.11926705793028004,
++                            0.15468940574352574,
++                            0.4457918756541846
++                        ],
++                        linf=[
++                            0.23569561716492549,
++                            0.3033702248718082,
++                            0.8621735653950817
++                        ])
++end
++
++@testitem "TreeMesh1D Euler FSBP: relaxation conserves entropy" setup=[
++    Setup,
++    TreeMesh1DEulerFSBP
++] tags=[:tree_part1] begin
++    trixi_include(@__MODULE__, joinpath(EXAMPLES_DIR, "elixir_euler_ec_er.jl"),
++                  tspan = (0.0, 0.4))
++
++    S(u_ode) = Trixi.integrate(entropy, u_ode, semi)
++    # The final step is never relaxed (gamma is forced to 1 to hit t_end exactly), so the
++    # entropy is compared before it: nsteps * dt < t_end.
++    nsteps, dt = 10, 0.02
++
++    function drift(alg)
++        integ = Trixi.init(semidiscretize(semi, (0.0, 0.4)), alg; dt = dt,
++                           callback = nothing)
++        S0 = S(integ.u)
++        for _ in 1:nsteps
++            Trixi.step!(integ)
++        end
++        return abs(S(integ.u) - S0), abs(S0)
++    end
++
++    drift_er, S0 = drift(ode_alg)                        # relaxation, from the elixir
++    drift_rk, _ = drift(Trixi.CarpenterKennedy2N54())    # same machinery, no relaxation
++
++    # Relative, and against a reference run: asserting smallness alone would pass
++    # vacuously for an entropy near zero, or for a run too short to drift.
++    @test drift_er / S0 < 1e-10     # round-off level  (measured 1.6e-13)
++    @test drift_rk / S0 > 1e-3      # plain RK drifts  (measured 6.0e-1)
++end
+diff --git a/test/test_tree_2d_fsbp.jl b/test/test_tree_2d_fsbp.jl
+new file mode 100644
+index 0000000..eab6bb4
+--- /dev/null
++++ b/test/test_tree_2d_fsbp.jl
+@@ -0,0 +1,150 @@
++@testsnippet TreeMesh2DFSBP begin
++    EXAMPLES_DIR = examples_dir()
++end
++
++@testitem "TreeMesh2D Advection FSBP: FSBP vs DGSEM comparison" setup=[
++    Setup,
++    TreeMesh2DFSBP
++] tags=[:tree_part1] begin
++    using LinearAlgebra: norm
++
++    # A Lobatto-Legendre `DGFSBP` tensor-product basis is the same operator as DGSEM, so on
++    # the same (uniform, isotropic) mesh the two must agree up to floating point round-off.
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_2d_dgsem", "elixir_advection_basic.jl"))
++    u_dgsem = copy(sol.u[end])
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_2d_fsbp", "elixir_advection_basic.jl"))
++    u_fsbp = copy(sol.u[end])
++
++    @test norm(u_fsbp - u_dgsem, Inf) < 1e-12
++end
++
++@testitem "TreeMesh2D Advection FSBP: elixir_advection_basic.jl" setup=[
++    Setup,
++    TreeMesh2DFSBP
++] tags=[:tree_part1] begin
++    # `analysis_polydeg = nothing` in 2D, so `l2` differs from the DGSEM value.
++    @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_2d_fsbp",
++                                 "elixir_advection_basic.jl"),
++                        l2=[1.2574886515501355e-5],
++                        linf=[6.627000273806694e-5])
++
++    # Ensure that we do not have excessive memory allocations
++    # (e.g., from type instabilities)
++    @test_allocations(Trixi.rhs!, semi, sol, 1000)
++end
++
++@testitem "TreeMesh2D Euler EC FSBP: FSBP vs DGSEM comparison" setup=[
++    Setup,
++    TreeMesh2DFSBP
++] tags=[:tree_part1] begin
++    using LinearAlgebra: norm
++
++    # Same check for the flux-differencing (entropy-conservative) volume integral.
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_2d_dgsem", "elixir_euler_ec.jl"),
++                  initial_refinement_level = 3, tspan = (0.0, 0.2))
++    u_dgsem = copy(sol.u[end])
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_2d_fsbp", "elixir_euler_ec.jl"),
++                  initial_refinement_level = 3, tspan = (0.0, 0.2))
++    u_fsbp = copy(sol.u[end])
++
++    @test norm(u_fsbp - u_dgsem, Inf) < 1e-12
++end
++
++@testitem "TreeMesh2D Euler source terms nonperiodic FSBP: FSBP vs DGSEM comparison" setup=[
++    Setup,
++    TreeMesh2DFSBP
++] tags=[:tree_part1] begin
++    using LinearAlgebra: norm
++
++    # Non-periodic Dirichlet boundaries and source terms: Lobatto DGFSBP must still match
++    # DGSEM to round-off.
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_2d_dgsem",
++                           "elixir_euler_source_terms_nonperiodic.jl"),
++                  initial_refinement_level = 2, tspan = (0.0, 0.2))
++    u_dgsem = copy(sol.u[end])
++
++    trixi_include(@__MODULE__,
++                  joinpath(EXAMPLES_DIR, "tree_2d_fsbp",
++                           "elixir_euler_source_terms_nonperiodic.jl"),
++                  initial_refinement_level = 2, tspan = (0.0, 0.2))
++    u_fsbp = copy(sol.u[end])
++
++    @test norm(u_fsbp - u_dgsem, Inf) < 1e-12
++end
++
++@testitem "TreeMesh2D Euler FSBP: quasi-1D reduces to the 1D solver" setup=[Setup] tags=[:tree_part1] begin
++    using OrdinaryDiffEqLowStorageRK
++
++    # Data invariant along one axis, with no velocity component across it, decouples the
++    # 2D scheme into independent 1D problems, so the 1D solver is the reference.
++    #
++    # Smooth, since the entropy-conservative surface flux carries no dissipation, but
++    # nonlinear: density, velocity and pressure all vary.
++    prim(s) = (1 + 0.3 * sinpi(s), 0.2 * cospi(s), 1 + 0.4 * sinpi(s))
++    ic_1d(x, t, eq::CompressibleEulerEquations1D) = prim2cons(SVector(prim(x[1])...), eq)
++    function ic_2d(axis)
++        return function (x, t, eq::CompressibleEulerEquations2D)
++            rho, v, p = prim(x[axis])
++            return prim2cons(SVector(rho, axis == 1 ? v : 0.0, axis == 1 ? 0.0 : v, p), eq)
++        end
++    end
++
++    make_mesh(coords...) = TreeMesh(coords...; initial_refinement_level = 3,
++                                    n_cells_max = 10^4, periodicity = true)
++    centres(semi, axis) = [semi.mesh.tree.coordinates[axis, cell_id]
++                           for cell_id in semi.cache.elements.cell_ids]
++
++    # Fixed `dt`: for Euler the transverse wave speed is the sound speed, not zero, so a
++    # `StepsizeCallback` would pick different steps in 2D than in 1D.
++    function evolve(mesh, equations, ic)
++        solver = DGFSBP(LobattoLegendreCellBasisConstructor{Float64}((args...) -> 3);
++                        surface_flux = flux_ranocha,
++                        volume_integral = VolumeIntegralFluxDifferencing(flux_ranocha))
++        semi = SemidiscretizationHyperbolic(mesh, equations, ic, solver;
++                                            boundary_conditions = boundary_condition_periodic)
++        sol = solve(semidiscretize(semi, (0.0, 0.4)),
++                    CarpenterKennedy2N54(williamson_condition = false);
++                    dt = 0.01, adaptive = false, save_everystep = false,
++                    callback = nothing)
++        # `analysis_polydeg` interpolation is not implemented for 2D DGFSBP
++        l2, _ = AnalysisCallback(semi, interval = typemax(Int),
++                                 analysis_polydeg = nothing)(sol)
++        return semi, Trixi.wrap_array(sol.u[end], semi), l2
++    end
++
++    semi_1d, u_1d, l2_1d = evolve(make_mesh(-1.0, 1.0), CompressibleEulerEquations1D(1.4),
++                                  ic_1d)
++    centres_1d = centres(semi_1d, 1)
++
++    for axis in (1, 2)
++        semi_2d, u_2d, l2_2d = evolve(make_mesh((-1.0, -1.0), (1.0, 1.0)),
++                                      CompressibleEulerEquations2D(1.4), ic_2d(axis))
++        # 1D (rho, rho*v, rho*e) -> 2D variables; the transverse momentum stays zero
++        vars = axis == 1 ? (1, 2, 4) : (1, 3, 4)
++
++        # Transverse-invariant data gives the same volume-normalised L2 norms in both runs
++        @test l2_2d[collect(vars)]≈l2_1d atol=1e-14
++
++        # Every 2D element is compared against the 1D element with the same centre, on
++        # every transverse line, so this also pins transverse invariance.
++        partner = [findfirst(≈(c), centres_1d) for c in centres(semi_2d, axis)]
++        deviation = maximum(Trixi.eachelement(semi_2d.solver, semi_2d.cache)) do element
++            uel = u_2d[element]
++            maximum(abs(uel[v, i, j] - u_1d[k, axis == 1 ? i : j, partner[element]])
++                    for (k, v) in enumerate(vars), j in axes(uel, 3), i in axes(uel, 2))
++        end
++        @test deviation < 1e-13
++
++        momentum = maximum(Trixi.eachelement(semi_2d.solver, semi_2d.cache)) do element
++            maximum(abs, view(u_2d[element], axis == 1 ? 3 : 2, :, :))
++        end
++        @test momentum < 1e-13
++    end
++end
+diff --git a/test/test_unit.jl b/test/test_unit.jl
+index b01e673..7e3f303 100644
+--- a/test/test_unit.jl
++++ b/test/test_unit.jl
+@@ -3884,6 +3884,172 @@ end
+     end
+ end
+ 
++@testitem "Unit: LobattoLikeCellBasis / LobattoLegendreCellBasis match LobattoLegendreBasis" setup=[
++    Setup,
++    UnitTests
++] tags=[:misc_part1] begin
++    RealT = Float64
++
++    for polydeg in 1:5
++        # Ground truth: Trixi's existing, independently implemented DGSEM
++        # Lobatto-Legendre basis on the reference domain [-1, 1].
++        dg_basis = LobattoLegendreBasis(RealT, polydeg)
++
++        # LobattoLegendreCellBasis on the reference domain (pos = 0, dx = 2, i.e. J = 1)
++        # should reduce exactly to `dg_basis`.
++        basis_ll = Trixi.LobattoLegendreCellBasis(polydeg, zero(RealT), RealT(2))
++
++        # LobattoLikeCellBasis built directly from the reference basis' raw data
++        basis_like = Trixi.LobattoLikeCellBasis(dg_basis.nodes, dg_basis.weights,
++                                                dg_basis.derivative_matrix,
++                                                nodes_out -> Trixi.polynomial_interpolation_matrix(dg_basis.nodes,
++                                                                                                   nodes_out))
++
++        # DGSEM stores no boundary-interpolation matrix for the Lobatto basis
++        # (boundary evaluation is a node lookup there); build the same M^{-1}*L
++        # quantity from the generic helpers.
++        dg_basis_boundary_lift = hcat(Trixi.calc_Lhat(Trixi.calc_L(-one(RealT),
++                                                                   dg_basis.nodes,
++                                                                   dg_basis.weights),
++                                                      dg_basis.weights),
++                                      Trixi.calc_Lhat(Trixi.calc_L(one(RealT),
++                                                                   dg_basis.nodes,
++                                                                   dg_basis.weights),
++                                                      dg_basis.weights))
++
++        @testset "polydeg=$polydeg" begin
++            for basis in (basis_ll, basis_like)
++                @test Trixi.get_nodes(basis) ≈ dg_basis.nodes
++                @test Trixi.quadrature_weights(basis) ≈ dg_basis.weights
++                @test basis.derivative_split ≈ dg_basis.derivative_split
++                @test basis.derivative_dhat ≈ dg_basis.derivative_hat
++                @test basis.boundary_lift ≈ dg_basis_boundary_lift
++            end
++
++            # Affine map to a general physical cell: nodes/weights must scale accordingly.
++            pos = 0.25
++            dx = 0.5
++            J = dx / 2
++            basis_phys = Trixi.LobattoLegendreCellBasis(polydeg, pos, dx)
++            @test Trixi.get_nodes(basis_phys) ≈ J .* dg_basis.nodes .+ pos
++            @test Trixi.quadrature_weights(basis_phys) ≈ abs(J) .* dg_basis.weights
++        end
++    end
++end
++
++@testitem "Unit: WrappedArray ragged indexing (isotropic)" setup=[Setup, UnitTests] tags=[:misc_part1] begin
++    for nvars in (1, 3)
++        for NDIMS in 1:3
++            node_sizes = [2, 3, 1, 4]
++            n_elements = length(node_sizes)
++            num_nodes_in_element = [ntuple(_ -> n, NDIMS) for n in node_sizes]
++
++            offsets = Vector{Int}(undef, n_elements + 1)
++            offsets[1] = 0
++            for element in 1:n_elements
++                offsets[element + 1] = offsets[element] +
++                                       nvars * prod(num_nodes_in_element[element])
++            end
++            total_length = offsets[end]
++
++            # `data[k] == k` by construction, so `wrapped[...] == expected` below checks
++            # against the flat position itself; `==` between Float64 and Int compares
++            # numerically, so comparing to plain Int positions is fine
++            data = collect(Float64, 1:total_length)
++            wrapped = Trixi.WrappedArray(Val(NDIMS), nvars, num_nodes_in_element, offsets,
++                                         data)
++
++            @test eltype(wrapped) === Float64
++
++            for element in 1:n_elements
++                view_ = wrapped[element]
++                @test size(view_) == (nvars, num_nodes_in_element[element]...)
++
++                # ellipsis shortcut agrees with the direct element view
++                @test wrapped[.., element] == view_
++
++                for idx in CartesianIndices(view_)
++                    i_vars, i_dims... = Tuple(idx)
++                    expected = offsets[element] + LinearIndices(size(view_))[idx]
++                    @test view_[idx] == expected
++                    @test wrapped[i_vars, i_dims..., element] == expected
++                end
++            end
++
++            # `setindex!` must be a true zero-copy alias into the same flat array,
++            # not a copy: writing through one path must be visible through the other
++            first_idx = ntuple(_ -> 1, NDIMS)
++            wrapped[1, first_idx..., 1] = -1.0
++            @test wrapped[1][1, first_idx...] == -1.0
++
++            last_idx = num_nodes_in_element[end]
++            view_last = wrapped[n_elements]
++            view_last[1, last_idx...] = -2.0
++            @test wrapped[1, last_idx..., n_elements] == -2.0
++        end
++    end
++end
++
++@testitem "Unit: WrappedArray ragged indexing (anisotropic)" setup=[Setup, UnitTests] tags=[:misc_part1] begin
++    for nvars in (1, 3)
++        for NDIMS in 2:3
++            num_nodes_in_element = NDIMS == 2 ? [(2, 3), (4, 1), (3, 3)] :
++                                   [(2, 3, 4), (1, 2, 3)]
++            n_elements = length(num_nodes_in_element)
++
++            offsets = Vector{Int}(undef, n_elements + 1)
++            offsets[1] = 0
++            for element in 1:n_elements
++                offsets[element + 1] = offsets[element] +
++                                       nvars * prod(num_nodes_in_element[element])
++            end
++            total_length = offsets[end]
++
++            # `data[k] == k` by construction, so `wrapped[...] == expected` below checks
++            # against the flat position itself; `==` between Float64 and Int compares
++            # numerically, so comparing to plain Int positions is fine
++            data = collect(Float64, 1:total_length)
++            wrapped = Trixi.WrappedArray(Val(NDIMS), nvars, num_nodes_in_element, offsets,
++                                         data)
++
++            for element in 1:n_elements
++                view_ = wrapped[element]
++                @test size(view_) == (nvars, num_nodes_in_element[element]...)
++                @test wrapped[.., element] == view_
++
++                for idx in CartesianIndices(view_)
++                    i_vars, i_dims... = Tuple(idx)
++                    expected = offsets[element] + LinearIndices(size(view_))[idx]
++                    @test view_[idx] == expected
++                    @test wrapped[i_vars, i_dims..., element] == expected
++                end
++            end
++        end
++    end
++end
++
++@testitem "Unit: TensorProductCellBasis FSBP" setup=[Setup, UnitTests] tags=[:misc_part1] begin
++
++    # anisotropic tensor cell [1, 3] x [-1, 2], degrees 3 (x) and 2 (y)
++    bx = Trixi.LobattoLegendreCellBasis(3, 2.0, 2.0)
++    by = Trixi.LobattoLegendreCellBasis(2, 0.5, 3.0)
++    tp = Trixi.TensorProductCellBasis((bx, by))
++
++    xs = Trixi.get_nodes(bx)
++    wx = Trixi.quadrature_weights(bx)
++    ys = Trixi.get_nodes(by)
++    wy = Trixi.quadrature_weights(by)
++
++    # tensor quadrature over the cell, exact up to per-axis degree 2m-3 (5 in x, 3 in y)
++    for (a, b) in ((0, 0), (5, 3), (4, 1))
++        quad = sum(wx[I[1]] * wy[I[2]] * xs[I[1]]^a * ys[I[2]]^b
++                   for I in Trixi.eachnode(tp))
++        exact = (3.0^(a + 1) - 1.0^(a + 1)) / (a + 1) *
++                (2.0^(b + 1) - (-1.0)^(b + 1)) / (b + 1)
++        @test quad ≈ exact
++    end
++end
++
+ @testitem "Unit: ndims function for SemidiscretizaionHyperbolicSplit" setup=[
+     Setup,
+     UnitTests
+diff --git a/test/test_visualization.jl b/test/test_visualization.jl
+index eeccbf1..3fa1691 100644
+--- a/test/test_visualization.jl
++++ b/test/test_visualization.jl
+@@ -162,6 +162,30 @@ end
+             end
+         end
+     end
++
++    @timed_testset "PlotData2D for FSBP" begin
++        # A Lobatto-Legendre DGFSBP tensor basis is the same operator as DGSEM, so on the
++        # same uniform mesh the plot data must match to round-off.
++        @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_2d_fsbp",
++                                     "elixir_advection_basic.jl"))
++        pd_fsbp = PlotData2D(sol)
++        @test pd_fsbp isa Trixi.PlotData2DCartesian
++
++        @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_2d_dgsem",
++                                     "elixir_advection_basic.jl"))
++        pd_dgsem = PlotData2D(sol)
++
++        @test pd_fsbp.x == pd_dgsem.x
++        @test pd_fsbp.y == pd_dgsem.y
++        @test maximum(maximum(abs, pd_fsbp.data[v] .- pd_dgsem.data[v])
++                      for v in eachindex(pd_fsbp.data)) < 1e-12
++
++        @trixi_test_nowarn show(stdout, pd_fsbp)
++        println(stdout)
++        @trixi_test_nowarn Plots.plot(sol)
++        @trixi_test_nowarn Plots.plot(pd_fsbp["scalar"])
++        @trixi_test_nowarn Plots.plot(getmesh(pd_fsbp))
++    end
+ end
+ @testitem "Visualization: ScalarPlotData2D with DGMulti Quad elements" setup=[
+     Setup,
+@@ -245,6 +269,93 @@ end
+         @trixi_test_nowarn Plots.plot((x, equations) -> x, semi)
+     end
+ 
++    @timed_testset "PlotData1D for FSBP, uniform polynomial degree" begin
++        @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
++                                     "elixir_euler_ec.jl"),
++                            tspan=(0, 0.1))
++
++        # Constructor (default: reinterpolate=true, nvisnodes=nothing -> 2*nnodes per
++        # element)
++        @test PlotData1D(sol) isa PlotData1D
++        pd = PlotData1D(sol)
++
++        # show
++        @trixi_test_nowarn show(stdout, pd)
++        println(stdout)
++
++        # getindex
++        @test pd["rho"] == Trixi.PlotDataSeries(pd, 1)
++        @test pd["v1"] == Trixi.PlotDataSeries(pd, 2)
++        @test pd["p"] == Trixi.PlotDataSeries(pd, 3)
++        @test_throws KeyError pd["does not exist"]
++
++        # getmesh/PlotMesh
++        @test getmesh(pd) == Trixi.PlotMesh(pd)
++        @test getmesh(pd).plot_data == pd
++        @trixi_test_nowarn show(stdout, getmesh(pd))
++        println(stdout)
++
++        # nvisnodes: 32 elements, polydeg=3 (4 nodes/element)
++        @test size(pd.data) == (256, 3)         # default: 2*4*32
++        pd0 = PlotData1D(sol, nvisnodes = 0)
++        @test size(pd0.data) == (128, 3)        # 4*32
++        pd2 = PlotData1D(sol, nvisnodes = 2)
++        @test size(pd2.data) == (64, 3)         # 2*32
++
++        # reinterpolate=false uses original GL nodes (same count as nvisnodes=0)
++        pd_raw = PlotData1D(sol, reinterpolate = false)
++        @test size(pd_raw.data) == (128, 3)
++
++        @testset "1D plot recipes" begin
++            pd = PlotData1D(sol)
++            @trixi_test_nowarn Plots.plot(sol)
++            @trixi_test_nowarn Plots.plot(sol, reinterpolate = false)
++            @trixi_test_nowarn Plots.plot(pd)
++            @trixi_test_nowarn Plots.plot(pd["rho"])
++            @trixi_test_nowarn Plots.plot(getmesh(pd))
++            initial_condition_t_end(x, equations) = initial_condition(x, last(tspan),
++                                                                      equations)
++            @trixi_test_nowarn Plots.plot(initial_condition_t_end, semi)
++            @trixi_test_nowarn Plots.plot((x, equations) -> x, semi)
++        end
++    end
++
++    @timed_testset "PlotData1D for FSBP, variable polynomial degree" begin
++        @test_trixi_include(joinpath(EXAMPLES_DIR, "tree_1d_fsbp",
++                                     "elixir_euler_ec_variable_polynomial_degree.jl"),
++                            tspan=(0, 0.1))
++
++        # Constructor (default: reinterpolate=true, nvisnodes=nothing)
++        @test PlotData1D(sol) isa PlotData1D
++        pd = PlotData1D(sol)
++
++        # 32 elements: 14x polydeg=3 (4 nodes), 4x polydeg=0 (1 node),
++        # 14x polydeg=1 (2 nodes)
++        # nvisnodes=nothing -> 2*nnodes per element: 14*8 + 4*2 + 14*4 = 176
++        # nvisnodes=0 -> max(nnodes,2) per element: polydeg=0 elements get 2 instead of 1
++        @test size(pd.data) == (176, 3)
++        pd0 = PlotData1D(sol, nvisnodes = 0)
++        @test size(pd0.data) == (92, 3)         # 14*4 + 4*max(1,2) + 14*2 = 92
++        pd2 = PlotData1D(sol, nvisnodes = 2)
++        @test size(pd2.data) == (64, 3)         # 2*32
++
++        pd_raw = PlotData1D(sol, reinterpolate = false)
++        @test size(pd_raw.data) == (88, 3)
++
++        @testset "1D plot recipes" begin
++            pd = PlotData1D(sol)
++            @trixi_test_nowarn Plots.plot(sol)
++            @trixi_test_nowarn Plots.plot(sol, reinterpolate = false)
++            @trixi_test_nowarn Plots.plot(pd)
++            @trixi_test_nowarn Plots.plot(pd["rho"])
++            @trixi_test_nowarn Plots.plot(getmesh(pd))
++            initial_condition_t_end(x, equations) = initial_condition(x, last(tspan),
++                                                                      equations)
++            @trixi_test_nowarn Plots.plot(initial_condition_t_end, semi)
++            @trixi_test_nowarn Plots.plot((x, equations) -> x, semi)
++        end
++    end
++
+     # Fake a PlotDataXD objects to test code for plotting multiple variables on at least two rows
+     # with at least one plot remaining empty
+     @testset "plotting multiple variables" begin

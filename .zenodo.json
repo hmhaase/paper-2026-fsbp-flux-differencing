@@ -1,0 +1,54 @@
+{
+  "upload_type": "software",
+  "title": "Reproducibility repository for \"Summation-by-parts operators for general function spaces: Flux differencing, entropy stability, and accuracy\"",
+  "description": "Julia code, including a modified Trixi.jl, that regenerates every dataset behind the figures and tables of the paper.",
+  "version": "1.0.0",
+  "license": "mit",
+  "keywords": [
+    "FSBP operators",
+    "flux differencing",
+    "conservation",
+    "entropy stability",
+    "design order",
+    "hyperbolic conservation laws",
+    "Trixi.jl",
+    "Julia"
+  ],
+  "creators": [
+    {
+      "name": "Haase, Henry M.",
+      "affiliation": "Department of Mathematics, Linköping University, Sweden",
+      "orcid": "0009-0008-4065-0426"
+    },
+    {
+      "name": "Winters, Andrew R.",
+      "affiliation": "Department of Mathematics, Linköping University, Sweden",
+      "orcid": "0000-0002-5902-1522"
+    },
+    {
+      "name": "Glaubitz, Jan",
+      "affiliation": "Department of Mathematics, Linköping University, Sweden",
+      "orcid": "0000-0002-3434-5563"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.3996439",
+      "scheme": "doi",
+      "relation": "isDerivedFrom",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "10.21105/jcon.00077",
+      "scheme": "doi",
+      "relation": "references",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.1016/j.jcp.2021.110467",
+      "scheme": "doi",
+      "relation": "references",
+      "resource_type": "publication-article"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Reproducibility repository for \"Summation-by-parts operators for general function spaces: Flux differencing, entropy stability, and accuracy\""
+abstract: "Julia code, including a modified Trixi.jl, that regenerates every dataset behind the figures and tables of the paper."
+version: "1.0.0"
+license: MIT
+repository-code: "https://github.com/hmhaase/paper-2026-fsbp-flux-differencing"
+keywords:
+  - "FSBP operators"
+  - "flux differencing"
+  - "conservation"
+  - "entropy stability"
+  - "design order"
+  - "hyperbolic conservation laws"
+  - "Trixi.jl"
+  - "Julia"
+authors:
+  - given-names: "Henry M."
+    family-names: "Haase"
+    affiliation: "Department of Mathematics, Linköping University, Sweden"
+    orcid: "https://orcid.org/0009-0008-4065-0426"
+  - given-names: "Andrew R."
+    family-names: "Winters"
+    affiliation: "Department of Mathematics, Linköping University, Sweden"
+    orcid: "https://orcid.org/0000-0002-5902-1522"
+  - given-names: "Jan"
+    family-names: "Glaubitz"
+    affiliation: "Department of Mathematics, Linköping University, Sweden"
+    orcid: "https://orcid.org/0000-0002-3434-5563"
+references:
+  - type: software
+    title: "Trixi.jl"
+    url: "https://github.com/trixi-framework/Trixi.jl"
+    doi: "10.5281/zenodo.3996439"
+    authors:
+      - given-names: "Michael"
+        family-names: "Schlottke-Lakemper"
+      - given-names: "Gregor J."
+        family-names: "Gassner"
+      - given-names: "Hendrik"
+        family-names: "Ranocha"
+      - given-names: "Andrew R."
+        family-names: "Winters"
+      - given-names: "Jesse"
+        family-names: "Chan"
+      - given-names: "Andrés"
+        family-names: "Rueda-Ramírez"
+  - type: article
+    title: "Adaptive numerical simulations with Trixi.jl: A case study of Julia for scientific computing"
+    journal: "Proceedings of the JuliaCon Conferences"
+    volume: 1
+    year: 2022
+    doi: "10.21105/jcon.00077"
+    authors:
+      - given-names: "Hendrik"
+        family-names: "Ranocha"
+      - given-names: "Michael"
+        family-names: "Schlottke-Lakemper"
+      - given-names: "Andrew R."
+        family-names: "Winters"
+      - given-names: "Erik"
+        family-names: "Faulhaber"
+      - given-names: "Jesse"
+        family-names: "Chan"
+      - given-names: "Gregor J."
+        family-names: "Gassner"
+  - type: article
+    title: "A purely hyperbolic discontinuous Galerkin approach for self-gravitating gas dynamics"
+    journal: "Journal of Computational Physics"
+    volume: 442
+    year: 2021
+    doi: "10.1016/j.jcp.2021.110467"
+    authors:
+      - given-names: "Michael"
+        family-names: "Schlottke-Lakemper"
+      - given-names: "Andrew R."
+        family-names: "Winters"
+      - given-names: "Hendrik"
+        family-names: "Ranocha"
+      - given-names: "Gregor J."
+        family-names: "Gassner"

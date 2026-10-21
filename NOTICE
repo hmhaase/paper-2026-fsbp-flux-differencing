@@ -1,0 +1,22 @@
+This repository contains a modified copy of Trixi.jl in the directory Trixi.jl/.
+
+Trixi.jl
+  https://github.com/trixi-framework/Trixi.jl
+  Copyright (c) 2020-present The Trixi.jl Authors (see Trixi.jl/AUTHORS.md)
+  Licensed under the MIT License (see Trixi.jl/LICENSE.md)
+
+The copy was cut from upstream commit 12f0483c373b7779dc20bbda020f99915de05c97
+(version 0.16.25-DEV). Trixi.jl-fsbp.diff lists every modification made for the
+accompanying paper as one patch against that commit. In a git clone of this
+repository, the root commit holds the upstream tree unchanged, and every later
+commit touching Trixi.jl/ is one of those modifications:
+
+    git log --oneline -- Trixi.jl
+
+The FSBP operator tables in scripts/elixirs/fsbp_ops_*.jl were generated with
+FSBP.jl, the authors' operator-construction package, which is not public. Each
+file's header names the generating script.
+
+The modifications are copyright (c) 2026 Henry M. Haase, Andrew R. Winters
+and Jan Glaubitz, under the same MIT License. Everything outside Trixi.jl/
+is covered by LICENSE in this directory.
